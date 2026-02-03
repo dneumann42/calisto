@@ -4,6 +4,8 @@ local Gdk  = lgi.require("Gdk", "4.0")
 
 local THEME_PATH = (os.getenv("HOME") or "") .. "/.config/calisto/theme.lua"
 
+local Theme = require("theme")
+
 local function load_wallust_theme()
    local f = io.open(THEME_PATH, "r")
    if not f then return nil end
@@ -35,6 +37,9 @@ local UI  = {
       error       = "#f38ba8",
       info        = "#89dceb",
       highlight   = "#585b70",
+      urgent_bg   = "#bf616a", -- Example urgent background
+      urgent_fg   = "#eceff4", -- Example urgent foreground
+      hover_bg    = "#4c566a", -- Example hover background
    }
 }
 
@@ -148,7 +153,7 @@ function UI:apply_theme(opacity)
       .warning { color: {warning}; }
       .error   { color: {error}; }
       .info    { color: {info}; }
-   ]]):gsub("{([%w_]+)}", self.theme)
+   ]] .. Theme.Workspaces):gsub("{([%w_]+)}", self.theme)
 
    -- swap provider so repeated import() calls don't accumulate them
    local display = Gdk.Display.get_default()

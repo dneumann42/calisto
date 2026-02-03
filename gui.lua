@@ -14,12 +14,13 @@ local bar = Widgets.bar:new {
    opacity = 0.5,
    widgets = {
       Widgets.button:new {
-	 label = "Click Me!",
-	 css = css(Theme.Button),
-	 on_clicked = function()
-	    print("HERE!")
-	 end
+         label = "#",
+         css = css(Theme.Button),
+         on_clicked = function()
+            print("HERE!")
+         end
       },
+      Widgets.workspaces:new {},
       Widgets.hspacer:new(),
       Widgets.clock:new {
 	 css = css(Theme.Clock),

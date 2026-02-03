@@ -26,4 +26,27 @@ return {
      margin: 0px 2px;
   }
   ]],
+  Workspaces = [[
+  .workspace {
+     padding: 0px 8px;
+     margin: 0px 2px;
+     border-radius: 12px; /* Consistent with other buttons */
+     color: {fg}; /* Default text color */
+  }
+  .workspace.focused {
+     background-color: {accent}; /* Focused background color */
+     color: {fg_alt}; /* Focused text color */
+  }
+  .workspace.urgent {
+     background-color: {urgent_bg}; /* Urgent background color */
+     color: {urgent_fg}; /* Urgent text color */
+  }
+  .workspace.occupied {
+     background-color: {surface_alt}; /* Occupied background color */
+     color: {fg}; /* Occupied text color */
+  }
+  .workspace:hover {
+     background-color: {hover_bg}; /* Hover background color */
+  }
+  ]],
 }
