@@ -3,6 +3,13 @@ local Gtk  = lgi.require("Gtk", "4.0")
 local GLib = lgi.require("GLib", "2.0")
 local Widgets = {}
 
+local function apply_css(widget, css)
+   if not css then return end
+   local provider = Gtk.CssProvider.new()
+   provider:load_from_string(css)
+   widget:get_style_context():add_provider(provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+end
+
 local MONTHS = {
    "January","February","March","April","May","June",
    "July","August","September","October","November","December",
@@ -24,19 +31,19 @@ Widgets.button = {}
 function Widgets.button:new(cfg)
    local label = cfg.label or "Button"
    local btn = Gtk.Button.new_with_label(label)
-   btn:set_margin_start(2)
+   if not cfg.css then btn:set_margin_start(2) end
    btn.on_clicked = cfg.on_clicked or function()
       print("Button clicked")
    end
+   apply_css(btn, cfg.css)
    return btn
 end
 
 Widgets.clock = {}
 function Widgets.clock:new(cfg)
    local clock = Gtk.Label.new(format_date(cfg.format))
-   clock:set_margin_end(12)
+   if not cfg.css then clock:set_margin_end(12) end
 
-   local stopped = false
    GLib.timeout_add(
       GLib.PRIORITY_DEFAULT,
       1000,
@@ -48,6 +55,7 @@ function Widgets.clock:new(cfg)
 	 return true
       end
    )
+   apply_css(clock, cfg.css)
    return clock
 end
 
@@ -55,6 +63,7 @@ Widgets.hspacer = {}
 function Widgets.hspacer:new(cfg)
    local spacer = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
    spacer:set_hexpand(true)
+   apply_css(spacer, (cfg or {}).css or "")
    return spacer
 end
 

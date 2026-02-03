@@ -138,7 +138,7 @@ function UI:apply_theme()
       .warning { color: {warning}; }
       .error   { color: {error}; }
       .info    { color: {info}; }
-   ]]):gsub("{(%w+)}", self.theme)
+   ]]):gsub("{([%w_]+)}", self.theme)
 
    -- swap provider so repeated import() calls don't accumulate them
    local display = Gdk.Display.get_default()
