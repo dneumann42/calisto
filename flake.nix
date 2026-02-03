@@ -1,61 +1,83 @@
 {
-  inputs = {
-    nixpkgs.url     = "github:NixOS/nixpkgs";
-    flake-utils.url = "github:flake-utils/flake-utils";
-  };
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs";
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
-      let
-        pkgs = nixpkgs.legacyPackages.${system};
+  outputs = { self, nixpkgs }:
+    let
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+      # replaces flake-utils.lib.eachSystem: maps system -> attrset, then
+      # merges into { packages.x86_64-linux = …; packages.aarch64-linux = …; … }
+      eachSystem = f:
+        builtins.listToAttrs (map (s: { name = s; value = f s; }) systems);
 
-        # ── metadata — edit here; every package format derives from these ──
-        pname       = "calisto";
-        version     = "0.1.0";
-        description = "Wayland top-panel for Sway / wlroots compositors";
-        license     = "MIT";
-        repoUrl     = "https://github.com/you/calisto";   # ← update this
+      outputsFor = system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
 
-        # ── nix deps ────────────────────────────────────────────────────────
-        lua        = pkgs.lua5_4;
-        lgi        = pkgs.lua54Packages.lgi;
-        # ^ if lgi fails to build, apply the lua_resume() patch from dev.sh
-        #   via an override on this derivation.
-        gtk4       = pkgs.gtk4;
-        layerShell = pkgs.gtk4-layer-shell;
-        # ^ must exist in your nixpkgs — update or add an overlay if missing.
-        gir        = pkgs.gobject-introspection;
+          # ── metadata — edit here; every package format derives from these ──
+          pname       = "calisto";
+          version     = "0.1.0";
+          description = "Wayland top-panel for Sway / wlroots compositors";
+          license     = "MIT";
+          repoUrl     = "https://github.com/you/calisto";   # ← update this
 
-        # ── only .lua files enter the store ──────────────────────────────────
-        src = pkgs.lib.cleanSourceWith {
-          src = ./.;
-          filter = p: _t:
-            builtins.elem (builtins.baseNameOf p)
-              [ "main.lua" "gui.lua" "ui.lua" "widgets.lua"
-                "theme.lua" "json.lua" "pprint.lua" ];
-        };
+          # ── nix deps ────────────────────────────────────────────────────────
+          lua        = pkgs.lua5_4;
+          # lgi 0.9.2 is marked broken in nixpkgs: lua_resume() gained a 4th
+          # arg (nresults) in Lua 5.4.  Import with allowBroken so eval passes,
+          # then fix the one call site in postPatch (same fix as old dev.sh).
+          lgi        = (import nixpkgs { inherit system; config.allowBroken = true; })
+            .lua54Packages.lgi.overrideAttrs (prev: {
+              postPatch = (prev.postPatch or "") + ''
+                sed -i 's/res = lua_resume (L, NULL, npos);/{ int nresults; res = lua_resume (L, NULL, npos, \&nresults); }/' lgi/callable.c
+              '';
+            });
+          gtk4       = pkgs.gtk4;
+          layerShell = pkgs.gtk4-layer-shell;
+          # ^ must exist in your nixpkgs — update or add an overlay if missing.
+          gir        = pkgs.gobject-introspection;
 
-        # ── data derivation — drops .lua files into /share/calisto/ ─────────
-        calistoData = pkgs.stdenv.mkDerivation {
-          pname   = pname + "-data";
-          inherit version src;
-          installPhase = ''
-            mkdir -p "$out/share/${pname}"
-            cp *.lua "$out/share/${pname}/"
-          '';
-        };
+          # ── only .lua files enter the store ────────────────────────────────
+          src = pkgs.lib.cleanSourceWith {
+            src = ./.;
+            filter = p: _t:
+              builtins.elem (builtins.baseNameOf p)
+                [ "main.lua" "gui.lua" "ui.lua" "widgets.lua"
+                  "theme.lua" "json.lua" "pprint.lua" ];
+          };
 
-        # ── colon-separated GI typelib path (reused by every output) ─────────
-        giTypelibs =
-            "${gtk4}/lib/girepository-1.0"
-          + ":${layerShell}/lib/girepository-1.0"
-          + ":${pkgs.glib}/lib/girepository-1.0";
+          # ── data derivation — drops .lua files into /share/calisto/ ────────
+          calistoData = pkgs.stdenv.mkDerivation {
+            pname   = pname + "-data";
+            inherit version src;
+            installPhase = ''
+              mkdir -p "$out/share/${pname}"
+              cp *.lua "$out/share/${pname}/"
+            '';
+          };
 
-        # ── Arch PKGBUILD ────────────────────────────────────────────────────
-        # Flush-left on purpose: nix strips indentation equal to the closing ''.
-        # <<'WRAPPER' (quoted delimiter) stops bash from expanding $pkgdir,
-        # $srcdir, and $@ during makepkg.  nix still interpolates ${pname} etc.
-        pkgbuildText = ''
+          # ── GI typelib path ─────────────────────────────────────────────
+          # Typelibs live in .out outputs; propagatedBuildInputs only gives
+          # one level.  Walk recursively (depth 5) to reach transitive deps
+          # like HarfBuzz (dep of Pango, dep of GTK4).  Duplicates in the
+          # path are harmless — GI silently skips dirs that don't exist.
+          collectDeps = depth: deps:
+            if depth == 0 then deps
+            else
+              let
+                next = builtins.filter (d: d != null)
+                  (builtins.concatMap
+                    (d: (d.propagatedBuildInputs or [])) deps);
+              in deps ++ collectDeps (depth - 1) next;
+          giRaw   = collectDeps 5 [ gtk4 layerShell pkgs.glib ];
+          giDeps  = builtins.map (d: if d ? "out" then d.out else d) giRaw;
+          giTypelibs = builtins.concatStringsSep ":"
+            (builtins.map (d: "${d}/lib/girepository-1.0") giDeps);
+
+          # ── Arch PKGBUILD ──────────────────────────────────────────────────
+          # Flush-left on purpose: nix strips indentation equal to the closing
+          # ''.  <<'WRAPPER' (quoted delimiter) stops bash from expanding
+          # $pkgdir / $srcdir / $@.  nix still interpolates ${pname} etc.
+          pkgbuildText = ''
 # Maintainer: you <you@example.com>
 pkgname=${pname}
 pkgver=${version}
@@ -90,15 +112,14 @@ WRAPPER
 }
 '';
 
-        # ── Fedora RPM spec ──────────────────────────────────────────────────
-        # Same heredoc strategy.  rpmbuild expands %{…} macros on the whole
-        # file before the shell runs, so %{name} inside <<'WRAPPER' works.
-        # We use ${pname} (nix) in the wrapper paths for clarity.
-        #
-        # To generate Source0 before rpmbuild:
-        #   git archive --prefix=calisto-0.1.0/ v0.1.0 | \
-        #     gzip > calisto-0.1.0.tar.gz
-        specText = ''
+          # ── Fedora RPM spec ────────────────────────────────────────────────
+          # Same heredoc strategy.  rpmbuild expands %{…} macros on the whole
+          # file before the shell runs, so %{name} inside <<'WRAPPER' works.
+          #
+          # To generate Source0 before rpmbuild:
+          #   git archive --prefix=calisto-0.1.0/ v0.1.0 | \
+          #     gzip > calisto-0.1.0.tar.gz
+          specText = ''
 Name:           ${pname}
 Version:        ${version}
 Release:        1%{?dist}
@@ -149,55 +170,50 @@ chmod 0755 %{buildroot}/usr/bin/%{name}
 - Initial packaging
 '';
 
-        # ── the runnable package (let-bound so apps.default can ref it) ────
-        calistoPackage = pkgs.symlinkJoin {
-          name  = pname;
-          paths = [
-            (pkgs.writeShellScriptBin pname ''
-              exec env \
-                GI_TYPELIB_PATH="${giTypelibs}" \
-                LUA_PATH="${calistoData}/share/${pname}/?.lua;${lgi}/share/lua/5.4/?.lua" \
-                LUA_CPATH="${lgi}/lib/lua/5.4/?.so" \
-                LD_PRELOAD="${layerShell}/lib/libgtk4-layer-shell.so" \
-                ${lua}/bin/lua "${calistoData}/share/${pname}/main.lua" "$@"
-            '')
-            calistoData
-          ];
+          # ── the runnable package ───────────────────────────────────────────
+          calistoPackage = pkgs.symlinkJoin {
+            name  = pname;
+            paths = [
+              (pkgs.writeShellScriptBin pname ''
+                exec env \
+                  GI_TYPELIB_PATH="${giTypelibs}" \
+                  LUA_PATH="${calistoData}/share/${pname}/?.lua;${lgi}/share/lua/5.4/?.lua" \
+                  LUA_CPATH="${lgi}/lib/lua/5.4/?.so" \
+                  LD_PRELOAD="${layerShell}/lib/libgtk4-layer-shell.so" \
+                  ${lua}/bin/lua "${calistoData}/share/${pname}/main.lua" "$@"
+              '')
+              calistoData
+            ];
+          };
+
+        in {
+          packages = {
+            default  = calistoPackage;
+            pkgbuild = pkgs.writeText "PKGBUILD"      pkgbuildText;
+            specfile = pkgs.writeText "${pname}.spec"  specText;
+          };
+
+          apps.default = {
+            type    = "app";
+            program = "${calistoPackage}/bin/${pname}";
+          };
+
+          devShells.default = pkgs.mkShell {
+            buildInputs = [
+              lua pkgs.luarocks gtk4 layerShell gir lgi pkgs.glib
+            ];
+            shellHook = ''
+              export GI_TYPELIB_PATH="${giTypelibs}"
+              export LUA_PATH="$PWD/?.lua;${lgi}/share/lua/5.4/?.lua"
+              export LUA_CPATH="${lgi}/lib/lua/5.4/?.so"
+              printf '\n  Run:  LD_PRELOAD=${layerShell}/lib/libgtk4-layer-shell.so lua main.lua\n\n'
+            '';
+          };
         };
 
-      in {
-        # ══════════════════════════════════════════════════════════
-        #  nix build .   →  result/bin/calisto
-        #  nix run .     →  launch directly
-        # ══════════════════════════════════════════════════════════
-        packages.default = calistoPackage;
-
-        apps.default = {
-          type    = "app";
-          program = "${calistoPackage}/bin/${pname}";
-        };
-
-        # ══════════════════════════════════════════════════════════
-        #  nix build .#pkgbuild   →  cat result   (Arch PKGBUILD)
-        #  nix build .#specfile   →  cat result   (Fedora .spec)
-        # ══════════════════════════════════════════════════════════
-        packages.pkgbuild  = pkgs.writeText "PKGBUILD"      pkgbuildText;
-        packages.specfile  = pkgs.writeText "${pname}.spec"  specText;
-
-        # ══════════════════════════════════════════════════════════
-        #  nix develop  →  shell with all runtime deps
-        # ══════════════════════════════════════════════════════════
-        devShells.default = pkgs.mkShell {
-          buildInputs = [
-            lua pkgs.luarocks gtk4 layerShell gir lgi pkgs.glib
-          ];
-          shellHook = ''
-            export GI_TYPELIB_PATH="${giTypelibs}"
-            export LUA_PATH="$PWD/?.lua;${lgi}/share/lua/5.4/?.lua"
-            export LUA_CPATH="${lgi}/lib/lua/5.4/?.so"
-            printf '\n  Run:  LD_PRELOAD=${layerShell}/lib/libgtk4-layer-shell.so lua main.lua\n\n'
-          '';
-        };
-      }
-    );
+    in {
+      packages   = eachSystem (s: (outputsFor s).packages);
+      apps       = eachSystem (s: (outputsFor s).apps);
+      devShells  = eachSystem (s: (outputsFor s).devShells);
+    };
 }
