@@ -36,13 +36,11 @@
           # ^ must exist in your nixpkgs — update or add an overlay if missing.
           gir        = pkgs.gobject-introspection;
 
-          # ── only .lua files enter the store ────────────────────────────────
+          # ── only .lua files (and the src/ dir) enter the store ─────────
           src = pkgs.lib.cleanSourceWith {
             src = ./.;
-            filter = p: _t:
-              builtins.elem (builtins.baseNameOf p)
-                [ "main.lua" "gui.lua" "ui.lua" "widgets.lua"
-                  "theme.lua" "json.lua" "pprint.lua" ];
+            filter = p: t:
+              t == "directory" || builtins.match ".*\\.lua$" (builtins.baseNameOf p) != null;
           };
 
           # ── data derivation — drops .lua files into /share/calisto/ ────────
@@ -50,8 +48,9 @@
             pname   = pname + "-data";
             inherit version src;
             installPhase = ''
-              mkdir -p "$out/share/${pname}"
-              cp *.lua "$out/share/${pname}/"
+              mkdir -p "$out/share/${pname}/src"
+              cp calisto.lua "$out/share/${pname}/"
+              cp src/*.lua   "$out/share/${pname}/src/"
             '';
           };
 
@@ -98,15 +97,16 @@ package() {
   local datadir="/usr/share/${pname}"
   mkdir -p "$pkgdir$datadir" "$pkgdir/usr/bin"
 
-  install -m644 "$srcdir"/{main,gui,ui,widgets,theme,json,pprint}.lua \
-    "$pkgdir$datadir/"
+  install -m644 "$srcdir"/calisto.lua "$pkgdir$datadir/"
+  mkdir -p "$pkgdir$datadir/src"
+  install -m644 "$srcdir"/src/*.lua  "$pkgdir$datadir/src/"
 
   cat > "$pkgdir/usr/bin/${pname}" <<'WRAPPER'
 #!/bin/sh
 exec env \
   LD_PRELOAD=/usr/lib/libgtk4-layer-shell.so \
-  LUA_PATH="/usr/share/${pname}/?.lua" \
-  lua "/usr/share/${pname}/main.lua" "$@"
+  LUA_PATH="/usr/share/${pname}/?.lua:/usr/share/${pname}/src/?.lua" \
+  lua "/usr/share/${pname}/calisto.lua" "$@"
 WRAPPER
   chmod +x "$pkgdir/usr/bin/${pname}"
 }
@@ -147,23 +147,25 @@ Built with Lua, LGI, and GTK 4.
 
 %install
 mkdir -p %{buildroot}/usr/share/%{name} %{buildroot}/usr/bin
-install -m644 main.lua gui.lua ui.lua widgets.lua \
-              theme.lua json.lua pprint.lua \
-              %{buildroot}/usr/share/%{name}/
+install -m644 calisto.lua %{buildroot}/usr/share/%{name}/
+mkdir -p %{buildroot}/usr/share/%{name}/src
+install -m644 src/*.lua  %{buildroot}/usr/share/%{name}/src/
 
 cat > %{buildroot}/usr/bin/%{name} <<'WRAPPER'
 #!/bin/sh
 exec env \
   LD_PRELOAD=/usr/lib64/libgtk4-layer-shell.so \
-  LUA_PATH="/usr/share/${pname}/?.lua" \
-  lua "/usr/share/${pname}/main.lua" "$@"
+  LUA_PATH="/usr/share/${pname}/?.lua:/usr/share/${pname}/src/?.lua" \
+  lua "/usr/share/${pname}/calisto.lua" "$@"
 WRAPPER
 chmod 0755 %{buildroot}/usr/bin/%{name}
 
 %files
 /usr/bin/%{name}
 %dir /usr/share/%{name}/
-/usr/share/%{name}/*.lua
+/usr/share/%{name}/calisto.lua
+%dir /usr/share/%{name}/src/
+/usr/share/%{name}/src/*.lua
 
 %changelog
 * Tue Feb 03 2026 You <you@example.com> 0.1.0-1
@@ -177,10 +179,10 @@ chmod 0755 %{buildroot}/usr/bin/%{name}
               (pkgs.writeShellScriptBin pname ''
                 exec env \
                   GI_TYPELIB_PATH="${giTypelibs}" \
-                  LUA_PATH="${calistoData}/share/${pname}/?.lua;${lgi}/share/lua/5.4/?.lua" \
+                  LUA_PATH="${calistoData}/share/${pname}/?.lua;${calistoData}/share/${pname}/src/?.lua;${lgi}/share/lua/5.4/?.lua" \
                   LUA_CPATH="${lgi}/lib/lua/5.4/?.so" \
                   LD_PRELOAD="${layerShell}/lib/libgtk4-layer-shell.so" \
-                  ${lua}/bin/lua "${calistoData}/share/${pname}/main.lua" "$@"
+                  ${lua}/bin/lua "${calistoData}/share/${pname}/calisto.lua" "$@"
               '')
               calistoData
             ];
@@ -204,9 +206,9 @@ chmod 0755 %{buildroot}/usr/bin/%{name}
             ];
             shellHook = ''
               export GI_TYPELIB_PATH="${giTypelibs}"
-              export LUA_PATH="$PWD/?.lua;${lgi}/share/lua/5.4/?.lua"
+              export LUA_PATH="$PWD/?.lua;$PWD/src/?.lua;${lgi}/share/lua/5.4/?.lua"
               export LUA_CPATH="${lgi}/lib/lua/5.4/?.so"
-              printf '\n  Run:  LD_PRELOAD=${layerShell}/lib/libgtk4-layer-shell.so lua main.lua\n\n'
+              printf '\n  Run:  LD_PRELOAD=${layerShell}/lib/libgtk4-layer-shell.so lua calisto.lua\n\n'
             '';
           };
         };

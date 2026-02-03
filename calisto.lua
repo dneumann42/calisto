@@ -15,7 +15,7 @@ local BAR_HEIGHT = 40
 
 -- Directory this script lives in — lets us find gui.lua regardless of cwd
 local SCRIPT_DIR = (arg[0] or ""):match("(.+)/") or "."
-local GUI_PATH   = SCRIPT_DIR .. "/gui.lua"
+local GUI_PATH   = SCRIPT_DIR .. "/src/gui.lua"
 
 -------------------------------------------------------------------------------
 -- import(name)  —  like require, but never caches.  Always reads and evals.
@@ -24,7 +24,7 @@ local GUI_PATH   = SCRIPT_DIR .. "/gui.lua"
 -- The chunk name is set to "@<path>" so stack traces point to the file.
 -------------------------------------------------------------------------------
 function import(name)                                          -- intentionally global
-    local path = SCRIPT_DIR .. "/" .. name:gsub("%.", "/") .. ".lua"
+    local path = SCRIPT_DIR .. "/src/" .. name:gsub("%.", "/") .. ".lua"
     local f    = io.open(path, "r")
     if not f then error("import: cannot open '" .. path .. "'", 2) end
     local src  = f:read("a"); f:close()
@@ -55,12 +55,22 @@ local function mtime(path)
     return info and info:get_modification_time().tv_sec or 0
 end
 
-local WATCHED = {
-   GUI_PATH,
-   SCRIPT_DIR .. "/widgets.lua",
-   SCRIPT_DIR .. "/ui.lua",
-   SCRIPT_DIR .. "/theme.lua",
-}
+-- collect all .lua files in src/ at startup
+local function scan_src()
+    local files = {}
+    local dir  = Gio.File.new_for_path(SCRIPT_DIR .. "/src")
+    local iter = dir:enumerate_children("standard::name,standard::type", 0, nil)
+    local info = iter:next_file(nil)
+    while info do
+        local name = info:get_name()
+        if name:match("%.lua$") then
+            files[#files + 1] = SCRIPT_DIR .. "/src/" .. name
+        end
+        info = iter:next_file(nil)
+    end
+    return files
+end
+local WATCHED = scan_src()
 
 local function start_poller()
     local cache = {}
