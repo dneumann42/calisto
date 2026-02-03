@@ -6,7 +6,8 @@ local lgi = require("lgi")
 package.preload["lgi.override.Gdk"] = function() return {} end
 package.preload["lgi.override.Gtk"] = function() return {} end
 
-local Gtk = lgi.require("Gtk", "4.0")
+local Gtk        = lgi.require("Gtk", "4.0")
+local GLib       = lgi.require("GLib", "2.0")
 local LayerShell = lgi.require("Gtk4LayerShell", "1.0")
 
 local BAR_HEIGHT = 40
@@ -52,14 +53,35 @@ app.on_activate = function()
     -- e.g. in sway config: set_from_resource $calisto i3wm.calisto #000000
     LayerShell.set_namespace(window, "calisto")
 
-    -- Placeholder content
-    local box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
-    box:set_valign(Gtk.Align.CENTER)
-    box:set_margin_start(12)
-    box:set_margin_end(12)
-    box:append(Gtk.Label.new("Calisto"))
+    -- Bar layout: [Start]  ····spacer····  [HH:MM:SS]
+    local bar = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
+    bar:set_valign(Gtk.Align.CENTER)
 
-    window:set_child(box)
+    -- Left — start button
+    local start_btn = Gtk.Button.new_with_label("Start")
+    start_btn:set_margin_start(12)
+    start_btn.on_clicked = function()
+        print("Start clicked")
+    end
+    bar:append(start_btn)
+
+    -- Middle — expanding spacer pushes the clock to the right edge
+    local spacer = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
+    spacer:set_hexpand(true)
+    bar:append(spacer)
+
+    -- Right — clock
+    local clock = Gtk.Label.new(os.date("%H:%M:%S"))
+    clock:set_margin_end(12)
+    bar:append(clock)
+
+    -- Tick the clock every second
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, function()
+        clock:set_text(os.date("%H:%M:%S"))
+        return true
+    end)
+
+    window:set_child(bar)
     window:present()
 end
 
