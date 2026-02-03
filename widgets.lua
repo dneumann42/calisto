@@ -3,6 +3,8 @@ local Gtk  = lgi.require("Gtk", "4.0")
 local GLib = lgi.require("GLib", "2.0")
 local Widgets = {}
 
+local UI = require("ui")
+
 local function apply_css(widget, css)
    if not css then return end
    local provider = Gtk.CssProvider.new()
@@ -25,6 +27,23 @@ local function format_date(fmt)
    return string.format("%s %d%s, %d | %d:%02d%s",
       MONTHS[t.month], t.day, suf, t.year,
       h12, t.min, t.hour < 12 and "AM" or "PM")
+end
+
+Widgets.bar = {}
+function Widgets.bar:new(cfg)
+   local bar = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
+   bar:set_valign(Gtk.Align.CENTER)
+
+   if cfg.opacity then
+      UI:apply_theme(cfg.opacity)
+   end
+
+   local widgets = cfg.widgets or {}
+   for i = 1, #widgets do
+      bar:append(widgets[i])
+   end
+
+   return bar
 end
 
 Widgets.button = {}
@@ -65,6 +84,10 @@ function Widgets.hspacer:new(cfg)
    spacer:set_hexpand(true)
    apply_css(spacer, (cfg or {}).css or "")
    return spacer
+end
+
+Widgets.workspaces = {}
+function Widgets.workspaces:new(cfg)
 end
 
 return Widgets

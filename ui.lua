@@ -12,6 +12,13 @@ local function load_wallust_theme()
    return chunk and chunk()
 end
 
+local function hex_rgba(hex, alpha)
+   local r = tonumber(hex:sub(2,3), 16)
+   local g = tonumber(hex:sub(4,5), 16)
+   local b = tonumber(hex:sub(6,7), 16)
+   return string.format("rgba(%d,%d,%d,%s)", r, g, b, alpha)
+end
+
 local UI  = {
    theme = load_wallust_theme() or {
       bg          = "#1e1e2e",
@@ -31,12 +38,15 @@ local UI  = {
    }
 }
 
-function UI:apply_theme()
-   local css = ([[
+function UI:apply_theme(opacity)
+   opacity = opacity or 0.5
+   local win = string.format([[
       window {
-         background-color: {bg};
+         background-color: rgba(0, 0, 0, %f);
          color: {fg};
       }
+   ]], opacity)
+   local css = (win .. [[
       headerbar {
          background-color: {surface};
          color: {fg};
@@ -154,17 +164,5 @@ function UI:apply_theme()
 end
 
 UI:apply_theme()
-
-function UI:bar(cfg)
-   local bar = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
-   bar:set_valign(Gtk.Align.CENTER)
-
-   local widgets = cfg.widgets or {}
-   for i = 1, #widgets do
-      bar:append(widgets[i])
-   end
-   
-   return bar
-end
 
 return UI

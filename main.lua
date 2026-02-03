@@ -55,7 +55,12 @@ local function mtime(path)
     return info and info:get_modification_time().tv_sec or 0
 end
 
-local WATCHED = { GUI_PATH, SCRIPT_DIR .. "/widgets.lua" }
+local WATCHED = {
+   GUI_PATH,
+   SCRIPT_DIR .. "/widgets.lua",
+   SCRIPT_DIR .. "/ui.lua",
+   SCRIPT_DIR .. "/theme.lua",
+}
 
 local function start_poller()
     local cache = {}
