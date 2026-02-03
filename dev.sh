@@ -1,57 +1,48 @@
 #!/usr/bin/env bash
-# Installs and builds all runtime dependencies for Calisto on Arch Linux.
-# sudo is only invoked when something is actually missing.
+# Installs Nix on Arch or Fedora if not already present.
+# All runtime deps (lua, lgi, gtk4, gtk4-layer-shell …) are provided by
+# the flake — no manual package or luarocks steps needed.
 set -eu
 
 # ---------------------------------------------------------------
-# pacman packages — only call sudo if at least one is missing
+# detect distro
 # ---------------------------------------------------------------
-PKGS=(lua luarocks gtk4 gtk4-layer-shell gobject-introspection)
-MISSING=()
-for pkg in "${PKGS[@]}"; do
-    pacman -Qq "$pkg" &>/dev/null || MISSING+=("$pkg")
-done
-
-if [[ ${#MISSING[@]} -gt 0 ]]; then
-    echo "==> Installing: ${MISSING[*]}"
-    sudo pacman -S --needed "${MISSING[@]}"
+if command -v pacman &>/dev/null; then
+    DISTRO=arch
+elif command -v dnf &>/dev/null; then
+    DISTRO=fedora
 else
-    echo "==> System packages up to date"
+    echo "==> ERROR: neither pacman nor dnf found — unsupported distro"
+    exit 1
 fi
 
 # ---------------------------------------------------------------
-# lgi — Lua GObject Introspection
-#
-# lgi 0.9.2 does not compile on Lua 5.4: lua_resume() gained a 4th
-# parameter (nresults) in 5.4.  The src.rock bundles the full source
-# under  lgi/  but luarocks make needs the rockspec and the Makefile
-# in the same directory.  We unpack, copy the rockspec down, patch
-# the one call site, and build.
+# install nix via package manager
 # ---------------------------------------------------------------
-if lua -e 'require("lgi")' 2>/dev/null; then
-    echo "==> lgi already installed"
+if command -v nix &>/dev/null; then
+    echo "==> nix already installed ($(nix --version))"
 else
-    echo ""
-    echo "==> Building lgi (patched for Lua 5.4)"
+    echo "==> Installing nix…"
+    case "$DISTRO" in
+        arch)   sudo pacman -S --needed nix ;;
+        fedora) sudo dnf install -y nix      ;;
+    esac
 
-    BUILD=$(mktemp -d)
-    trap 'rm -rf "$BUILD"' EXIT
-    cd "$BUILD"
-
-    luarocks download lgi
-    unzip -q *.src.rock                          # rockspec + lgi/
-
-    # rockspec lives at the top; Makefile lives inside lgi/ — move it down
-    cp *.rockspec lgi/
-    cd lgi
-
-    # patch: lua_resume(L, from, narg)  →  lua_resume(L, from, narg, &nresults)
-    sed -i \
-        's/res = lua_resume (L, NULL, npos);/{ int nresults; res = lua_resume (L, NULL, npos, \&nresults); }/' \
-        lgi/callable.c
-
-    echo "==> Compiling lgi…"
-    sudo luarocks make *.rockspec
-
-    lua -e 'require("lgi"); print("lgi loaded OK")'
+    echo "==> Enabling nix-daemon…"
+    sudo systemctl enable --now nix-daemon
 fi
+
+# ---------------------------------------------------------------
+# enable flakes (idempotent)
+# ---------------------------------------------------------------
+NIX_CONF="$HOME/.config/nix/nix.conf"
+if ! grep -q "flakes" "$NIX_CONF" 2>/dev/null; then
+    mkdir -p "$HOME/.config/nix"
+    echo "experimental-features = nix-command flakes" >> "$NIX_CONF"
+    echo "==> Enabled flakes in $NIX_CONF"
+fi
+
+# ---------------------------------------------------------------
+echo ""
+echo "  nix develop   — open a dev shell (all deps from the flake)"
+echo "  nix run .     — build and launch calisto"
