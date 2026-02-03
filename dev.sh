@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # Installs and builds all runtime dependencies for Calisto on Arch Linux.
+# sudo is only invoked when something is actually missing.
 set -eu
 
-echo "==> System packages"
-sudo pacman -S --needed \
-    lua \
-    luarocks \
-    gtk4 \
-    gtk4-layer-shell \
-    gobject-introspection
+# ---------------------------------------------------------------
+# pacman packages — only call sudo if at least one is missing
+# ---------------------------------------------------------------
+PKGS=(lua luarocks gtk4 gtk4-layer-shell gobject-introspection)
+MISSING=()
+for pkg in "${PKGS[@]}"; do
+    pacman -Qq "$pkg" &>/dev/null || MISSING+=("$pkg")
+done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    echo "==> Installing: ${MISSING[*]}"
+    sudo pacman -S --needed "${MISSING[@]}"
+else
+    echo "==> System packages up to date"
+fi
 
 # ---------------------------------------------------------------
 # lgi — Lua GObject Introspection

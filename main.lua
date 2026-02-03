@@ -8,80 +8,104 @@ package.preload["lgi.override.Gtk"] = function() return {} end
 
 local Gtk        = lgi.require("Gtk", "4.0")
 local GLib       = lgi.require("GLib", "2.0")
+local Gio        = lgi.require("Gio", "2.0")
 local LayerShell = lgi.require("Gtk4LayerShell", "1.0")
 
 local BAR_HEIGHT = 40
 
-local app = Gtk.Application.new("com.calisto.bar", 0)
+-- Directory this script lives in — lets us find gui.lua regardless of cwd
+local SCRIPT_DIR = (arg[0] or ""):match("(.+)/") or "."
+local GUI_PATH   = SCRIPT_DIR .. "/gui.lua"
 
--- held at module scope so lgi's GC doesn't unref it when on_activate returns
+-------------------------------------------------------------------------------
+-- import(name)  —  like require, but never caches.  Always reads and evals.
+-- Dot separators map to directories:  import("foo.bar") → foo/bar.lua
+-- Paths are resolved relative to SCRIPT_DIR so it works from any cwd.
+-- The chunk name is set to "@<path>" so stack traces point to the file.
+-------------------------------------------------------------------------------
+function import(name)                                          -- intentionally global
+    local path = SCRIPT_DIR .. "/" .. name:gsub("%.", "/") .. ".lua"
+    local f    = io.open(path, "r")
+    if not f then error("import: cannot open '" .. path .. "'", 2) end
+    local src  = f:read("a"); f:close()
+    local chunk, err = load(src, "@" .. path)
+    if not chunk then error("import: " .. err, 2) end
+    return chunk()
+end
+
+local app        = Gtk.Application.new("com.calisto.bar", 0)
 local window
+local gui_cleanup
+
+local function reload()
+    if gui_cleanup then gui_cleanup(); gui_cleanup = nil end
+
+    local ok, widget, clean = pcall(dofile, GUI_PATH)
+    if not ok then
+        print("[calisto] " .. tostring(widget))   -- widget holds the error msg
+        return
+    end
+
+    gui_cleanup = clean
+    if window then window:set_child(widget) end
+end
+
+local function mtime(path)
+    local info = Gio.File.new_for_path(path):query_info("time::modified", 0, nil)
+    return info and info:get_modification_time().tv_sec or 0
+end
+
+local WATCHED = { GUI_PATH, SCRIPT_DIR .. "/widgets.lua" }
+
+local function start_poller()
+    local cache = {}
+    for _, path in ipairs(WATCHED) do cache[path] = mtime(path) end
+
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, function()
+        for _, path in ipairs(WATCHED) do
+            local current = mtime(path)
+            if current ~= cache[path] then
+                cache[path] = current
+                reload()
+                break                          -- one reload per tick is enough
+            end
+        end
+        return true
+    end)
+end
 
 app.on_activate = function()
-    -- lgi does not register the window with GApplication's window tracking,
-    -- so the app would quit the moment on_activate returns.  hold() keeps
-    -- the main loop running for the lifetime of the process.
     app:hold()
 
-    window = Gtk.Window.new()
+    Gtk.Settings.get_default().gtk_application_prefer_dark_theme = true
 
+    window = Gtk.Window.new()
     window:set_title("Calisto")
     window:set_size_request(-1, BAR_HEIGHT)
     window:set_decorated(false)
     window:set_can_focus(false)
 
-    -- Dock this window as a layer-shell surface
+    -- layer-shell: dock as a top-edge panel
     LayerShell.init_for_window(window)
     LayerShell.set_layer(window, LayerShell.Layer.TOP)
     LayerShell.set_keyboard_mode(window, LayerShell.KeyboardMode.NONE)
 
-    -- Anchor to top edge, spanning full monitor width
     LayerShell.set_anchor(window, LayerShell.Edge.TOP,    true)
     LayerShell.set_anchor(window, LayerShell.Edge.LEFT,   true)
     LayerShell.set_anchor(window, LayerShell.Edge.RIGHT,  true)
     LayerShell.set_anchor(window, LayerShell.Edge.BOTTOM, false)
 
-    -- Reserve screen space so windows don't render behind the bar
     LayerShell.set_exclusive_zone(window, BAR_HEIGHT)
 
-    -- Flush to the top edge of the monitor
     LayerShell.set_margin(window, LayerShell.Edge.TOP,    0)
     LayerShell.set_margin(window, LayerShell.Edge.LEFT,   0)
     LayerShell.set_margin(window, LayerShell.Edge.RIGHT,  0)
 
-    -- Sway (and other wlroots compositors) can match on this namespace
-    -- e.g. in sway config: set_from_resource $calisto i3wm.calisto #000000
     LayerShell.set_namespace(window, "calisto")
 
-    -- Bar layout: [Start]  ····spacer····  [HH:MM:SS]
-    local bar = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
-    bar:set_valign(Gtk.Align.CENTER)
+    reload()
+    start_poller()
 
-    -- Left — start button
-    local start_btn = Gtk.Button.new_with_label("Start")
-    start_btn:set_margin_start(12)
-    start_btn.on_clicked = function()
-        print("Start clicked")
-    end
-    bar:append(start_btn)
-
-    -- Middle — expanding spacer pushes the clock to the right edge
-    local spacer = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
-    spacer:set_hexpand(true)
-    bar:append(spacer)
-
-    -- Right — clock
-    local clock = Gtk.Label.new(os.date("%H:%M:%S"))
-    clock:set_margin_end(12)
-    bar:append(clock)
-
-    -- Tick the clock every second
-    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, function()
-        clock:set_text(os.date("%H:%M:%S"))
-        return true
-    end)
-
-    window:set_child(bar)
     window:present()
 end
 
