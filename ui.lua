@@ -1,6 +1,7 @@
 local lgi  = require("lgi")
 local Gtk  = lgi.require("Gtk", "4.0")
 local Gdk  = lgi.require("Gdk", "4.0")
+local pp = require("pprint") -- ADDED
 
 local THEME_PATH = (os.getenv("HOME") or "") .. "/.config/calisto/theme.lua"
 
@@ -45,13 +46,14 @@ local UI  = {
 
 function UI:apply_theme(opacity)
    opacity = opacity or 0.5
-   local win = string.format([[
+   local win_css = string.format([[
       window {
          background-color: rgba(0, 0, 0, %f);
          color: {fg};
       }
-   ]], opacity)
-   local css = (win .. [[
+   ]], opacity):gsub("{([%w_]+)}", self.theme)
+
+   local core_app_css = [[
       headerbar {
          background-color: {surface};
          color: {fg};
@@ -153,7 +155,13 @@ function UI:apply_theme(opacity)
       .warning { color: {warning}; }
       .error   { color: {error}; }
       .info    { color: {info}; }
-   ]] .. Theme.Workspaces):gsub("{([%w_]+)}", self.theme)
+   ]]
+
+   local themed_core_app_css = core_app_css:gsub("{([%w_]+)}", self.theme)
+   local themed_workspaces_css = Theme.Workspaces:gsub("{([%w_]+)}", self.theme)
+   print("Themed Workspaces CSS (before concatenation):", themed_workspaces_css)
+
+   local css = win_css .. themed_core_app_css .. themed_workspaces_css
 
    -- swap provider so repeated import() calls don't accumulate them
    local display = Gdk.Display.get_default()
