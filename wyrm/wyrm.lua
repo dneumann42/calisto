@@ -81,7 +81,10 @@ function tostring(value)
         for _ in pairs(value) do total = total + 1 end
         local is_array = (total == n)
 
-        local lines = { (tag or "") .. "{" }
+        local lines = { "{" }
+        if tag then
+            table.insert(lines, inner_indent .. "_tag = " .. string.format("%q", tag) .. ",")
+        end
         if is_array then
             for i = 1, n do
                 table.insert(lines, inner_indent .. _tostring(value[i], seen, depth + 1) .. ",")
@@ -107,15 +110,6 @@ function tostring(value)
    end
    return _tostring(value)
 end
-
-print(tostring {
-	 hello = "World!",
-	 1,
-	 2,
-	 test = {
-	    world = {1, 2, 3}
-    }
-})
 
 local ReaderCommands = {
     ['do'] = function() return {'{'} end,
@@ -174,13 +168,13 @@ local function tokenize(contents)
 
     local final_tokens = {}
     for i = 1, #tokens do
-        local tok = tokens[i]
-        if ReaderCommands[tok] then
-            local ts = ReaderCommands[tok]()
-            for t = 1, #ts do table.insert(final_tokens, ts[t]) end
-        else
-            table.insert(final_tokens, tok)
-        end
+       local tok = tokens[i]
+       if ReaderCommands[tok] then
+	  local ts = ReaderCommands[tok]()
+	  for t = 1, #ts do table.insert(final_tokens, ts[t]) end
+       else
+	  table.insert(final_tokens, tok)
+       end
     end
 
     return final_tokens
@@ -191,7 +185,7 @@ local function set_tag(tbl, tag)
 end
 
 local function get_tag(tbl)
-    return (getmetatable(tbl ) or {}).tag
+    return (getmetatable(tbl) or {}).tag
 end
 
 local function tag_is(tbl, check)
@@ -207,7 +201,9 @@ local function group(tokens)
     }
     for _, tok in ipairs(tokens) do
         if tok == '\n' then
-            table.insert(split, tok)
+	   table.insert(split, tok)
+        elseif type(tok) == 'number' then
+	   table.insert(split, tok)
         else
             local buf = ""
             for i = 1, #tok do
@@ -226,7 +222,7 @@ local function group(tokens)
     local pos = 1
     local match_close = { ['{'] = '}',  ['['] = ']',  ['('] = ')' }
     local match_open  = { ['}'] = '{',  [']'] = '[',  [')'] = '(' }
-    local tag_for     = { ['{'] = 'braces', ['['] = 'eval', ['('] = 'paren' }
+    local tag_for     = { ['{'] = 'script', ['['] = 'group', ['('] = 'paren' }
 
     local function parse(closer)
         local cmds = {}
@@ -251,7 +247,13 @@ local function group(tokens)
             elseif match_close[tok] then
                 local opener = tok
                 pos = pos + 1
-                table.insert(cmd, set_tag(parse(match_close[opener]), tag_for[opener]))
+                local parsed = parse(match_close[opener])
+                -- braces are blocks (list of commands); group/paren are single expressions
+                if opener == '{' then
+                    table.insert(cmd, set_tag(parsed, tag_for[opener]))
+                else
+                    table.insert(cmd, set_tag(parsed[1] or {}, tag_for[opener]))
+                end
             else
                 pos = pos + 1
                 table.insert(cmd, tok)
@@ -268,16 +270,126 @@ local function group(tokens)
 end
 
 local function read(code)
-    local tokens = tokenize(code)
-    local grouped = group(tokens)
+   local tokens = tokenize(code)
+   for i = 1, #tokens do
+      local n = tonumber(tokens[i])
+      if n ~= nil then
+	 tokens[i] = n
+      end
+   end
+   local grouped = group(tokens)
+   return grouped
+end
 
+-- Note, this is a bootstrapping evaluator, only meant to allow evaluating the code generator
+-- which is written in wyrm, and outputs 'lua' to be evaluated with ~load~.
 
-    return grouped
+local function next_env(env)
+   return {
+      parent = env,
+      scope = {}
+   }
+end
+
+local function env_get(env, key)
+    if env.scope[key] ~= nil then
+        return env.scope[key]
+    end
+    if env.parent ~= nil then
+        return env_get(env.parent, key)
+    end
+    return nil
+end
+
+local function env_set(env, key, value)
+   env.scope[key] = value
+   return value
+end
+
+_G.env = {
+   scope = {
+      ['print'] = function(args)
+	 io.write(tostring(args[2]))
+	 io.write("\n")
+	 return nil
+      end,
+      ['var'] = function(args, env)
+	 env_set(env, args[2], args[3])
+	 return nil
+      end,
+      ['fun'] = function(args, env)
+	 -- args[3] is the params script {x y ...}, unwrap the single command to get the name list
+	 -- args[4] is the body script, kept unevaluated
+	 env_set(env, args[2], set_tag({ args[3][1], args[4] }, "fun"))
+	 return nil
+      end,
+      ['+'] = function(args) return args[2] + args[3] end,
+      ['*'] = function(args) return args[2] * args[3] end,
+      ['/'] = function(args) return args[2] / args[3] end,
+      ['-'] = function(args) return args[2] - args[3] end,
+   }
+}
+
+local function apply(args, env, eval)
+    if #args == 0 then
+        return args
+    end
+    local cmd = env_get(env, args[1])
+    if cmd == nil then
+        return nil
+    end
+    if type(cmd) == "table" and tag_is(cmd, "fun") then
+       env = next_env(env)
+       local params = cmd[1]
+       local body = cmd[2]
+       for i = 2, #args do
+	  env_set(env, params[i - 1], args[i])
+       end
+       return eval(body, env)
+    end
+    if type(cmd) == "function" then
+       return cmd(args, env)
+    end
+end
+
+local function evaluate(exp, env)
+   assert(env)
+   if tag_is(exp, "script") then
+      local value = nil
+      for i = 1, #exp do
+	 value = evaluate(exp[i], env)
+      end
+      return value
+   end
+   if type(exp) == "string" and exp:sub(1, 1) == "$" then
+      return env_get(env, exp:sub(2))
+   end
+   if type(exp) == "table" then
+      -- Apply the arguments (including the command name)
+      -- script-tagged tables are quoted: leave them unevaluated
+      for i = 1, #exp do
+	 if not tag_is(exp[i], "script") then
+	    exp[i] = evaluate(exp[i], env)
+	 end
+      end
+
+      return apply(exp, env, evaluate)
+   end
+   return exp
 end
 
 local ast = read [[
-    var hello 100
+fun a {x} do
+  var y [+ $x 1]
+  + $x $y
+end
+
+a 10
+
 ]]
+
+print(ast)
+print(evaluate(ast, env))
 
 return {
     tokenize = tokenize,
