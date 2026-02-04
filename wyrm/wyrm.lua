@@ -43,6 +43,80 @@ fun factorial {n} {
 -- Tokenizer
 -- turns text into a list of tokens
 
+_G.lua_tostring = tostring
+
+local _lua_keywords = {
+    ["and"]=true, ["break"]=true, ["do"]=true, ["else"]=true, ["elseif"]=true,
+    ["end"]=true, ["false"]=true, ["for"]=true, ["function"]=true, ["goto"]=true,
+    ["if"]=true, ["in"]=true, ["local"]=true, ["nil"]=true, ["not"]=true,
+    ["or"]=true, ["repeat"]=true, ["return"]=true, ["then"]=true, ["true"]=true,
+    ["until"]=true, ["while"]=true,
+}
+
+local function is_identifier(s)
+    return type(s) == "string"
+        and s:match("^[%a_][%w_]*$")
+        and not _lua_keywords[s]
+end
+
+function tostring(value)
+   local function _tostring(value, seen, depth)
+        if type(value) == "string" then
+            return string.format("%q", value)
+        end
+        if type(value) ~= "table" then
+            return _G.lua_tostring(value)
+        end
+        seen = seen or {}
+        depth = depth or 0
+        if seen[value] then
+            return seen[value]
+        end
+        seen[value] = "{...}"
+        local tag = (getmetatable(value) or {}).tag
+        local indent      = string.rep("  ", depth)
+        local inner_indent = string.rep("  ", depth + 1)
+        local n = #value
+        local total = 0
+        for _ in pairs(value) do total = total + 1 end
+        local is_array = (total == n)
+
+        local lines = { (tag or "") .. "{" }
+        if is_array then
+            for i = 1, n do
+                table.insert(lines, inner_indent .. _tostring(value[i], seen, depth + 1) .. ",")
+            end
+        else
+            local keys = {}
+            for k in pairs(value) do table.insert(keys, k) end
+            table.sort(keys, function(a, b)
+                if type(a) == type(b) then return a < b end
+                return type(a) < type(b)
+            end)
+            for _, k in ipairs(keys) do
+                local key_str = is_identifier(k)
+                    and k
+                    or  "[" .. _tostring(k, seen, depth + 1) .. "]"
+                table.insert(lines, inner_indent .. key_str .. " = " .. _tostring(value[k], seen, depth + 1) .. ",")
+            end
+        end
+        table.insert(lines, indent .. "}")
+        local result = table.concat(lines, "\n")
+        seen[value] = result
+        return result
+   end
+   return _tostring(value)
+end
+
+print(tostring {
+	 hello = "World!",
+	 1,
+	 2,
+	 test = {
+	    world = {1, 2, 3}
+    }
+})
+
 local ReaderCommands = {
     ['do'] = function() return {'{'} end,
     ['end'] = function() return {'}'} end,
@@ -113,7 +187,7 @@ local function tokenize(contents)
 end
 
 local function set_tag(tbl, tag)
-    return setmetatable(tbl, { tag = tag })
+    return setmetatable(tbl, { tag = tag, __tostring = tostring })
 end
 
 local function get_tag(tbl)
@@ -125,8 +199,6 @@ local function tag_is(tbl, check)
 end
 
 local function group(tokens)
-    -- The tokenizer splits on whitespace only, so delimiters can be fused
-    -- to adjacent text (e.g. "{n}" or "{[<" or "2]}").  Detach them first.
     local split = {}
     local is_delim = {
         ['{'] = true, ['}'] = true,
@@ -152,34 +224,24 @@ local function group(tokens)
     end
 
     local pos = 1
-
-    -- opener -> closer, closer -> opener, opener -> tag
     local match_close = { ['{'] = '}',  ['['] = ']',  ['('] = ')' }
     local match_open  = { ['}'] = '{',  [']'] = '[',  [')'] = '(' }
     local tag_for     = { ['{'] = 'braces', ['['] = 'eval', ['('] = 'paren' }
 
-    -- Parse a sequence of commands until `closer` is reached (or EOF at top level).
-    -- Returns a plain list of commands; caller is responsible for tagging.
     local function parse(closer)
         local cmds = {}
         local cmd  = {}
-
         while pos <= #split do
             local tok = split[pos]
-
-            -- Matched the closer we were looking for
             if tok == closer then
                 pos = pos + 1
                 if #cmd > 0 then table.insert(cmds, cmd) end
                 return cmds
             end
-
-            -- Any other closer here is a mismatch
             if match_open[tok] then
                 error("group: unexpected '" .. tok .. "'" ..
                     (closer and (", expected '" .. closer .. "'") or ""))
             end
-
             if tok == '\n' then
                 pos = pos + 1
                 if #cmd > 0 then
@@ -187,18 +249,14 @@ local function group(tokens)
                     cmd = {}
                 end
             elseif match_close[tok] then
-                -- Opening delimiter: recurse, tag the result, push as a word
                 local opener = tok
                 pos = pos + 1
                 table.insert(cmd, set_tag(parse(match_close[opener]), tag_for[opener]))
             else
-                -- Plain word
                 pos = pos + 1
                 table.insert(cmd, tok)
             end
         end
-
-        -- Reached EOF
         if closer then
             error("group: unclosed '" .. match_open[closer] .. "'")
         end
