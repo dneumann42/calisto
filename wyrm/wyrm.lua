@@ -325,7 +325,22 @@ _G.env = {
 	 return nil
       end,
       ['var'] = function(args, env)
-	 env_set(env, args[2], args[3])
+	 local name = args[2]
+	 env_set(env, name, args[3])
+	 env_set(
+	    env,
+	    name .. "=",
+	    function(args, env, eval)
+	       local e = env
+	       while e ~= nil do
+		  if e.scope[name] then
+		     e.scope[name] = args[2]
+		     break
+		  else
+		     e = e.parent
+		  end
+	       end
+	 end)
 	 return nil
       end,
       ['fun'] = function(args, env)
@@ -346,6 +361,7 @@ _G.env = {
 	 return eval(args[2], env)
       end,
       ['>'] = function(args) return args[2] > args[3] end,
+      ['<'] = function(args) return args[2] < args[3] end,
       ['+'] = function(args) return args[2] + args[3] end,
       ['*'] = function(args) return args[2] * args[3] end,
       ['/'] = function(args) return args[2] / args[3] end,
@@ -417,8 +433,28 @@ fun do-times {n blk} do
   end
 end
 
-do-times 10 do
-  print "Hello, World!"
+fun while {exp blk} do
+  if {eval $exp} do
+    eval $blk
+    while $exp $blk
+  end
+end
+
+fun for {name count blk} do
+  fun loop {i} do
+     var name $i
+     eval $blk
+     if {< $i [eval $count]} do
+       loop [+ $i 1]
+     end
+  end
+  loop 0 $count
+end
+
+-- load base
+
+for idx 5 do
+  print $idx
 end
 
 ]]

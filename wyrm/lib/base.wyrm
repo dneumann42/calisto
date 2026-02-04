@@ -1,0 +1,8 @@
+fun do-times {n blk} do
+  if {> $n 0} do
+     eval $blk
+     do-times [- $n 1] $blk
+  else
+    print "DONE!"
+  end
+end
