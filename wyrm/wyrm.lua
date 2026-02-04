@@ -158,6 +158,16 @@ local function tokenize(contents)
             goto continue
         end
         if at_eof() then break end
+        if chr() == '"' then
+            local start = it
+            it = it + 1
+            while not at_eof() and chr() ~= '"' do
+                it = it + 1
+            end
+            if not at_eof() then it = it + 1 end -- consume closing "
+            table.insert(tokens, contents:sub(start, it - 1))
+            goto continue
+        end
         local start = it
         while not at_eof() and not at_ws() and chr() ~= '\n' do
             it = it + 1
@@ -219,6 +229,13 @@ local function group(tokens)
         end
     end
 
+    for i = 1, #split do
+        if type(split[i]) == "string" then
+            local n = tonumber(split[i])
+            if n ~= nil then split[i] = n end
+        end
+    end
+
     local pos = 1
     local match_close = { ['{'] = '}',  ['['] = ']',  ['('] = ')' }
     local match_open  = { ['}'] = '{',  [']'] = '[',  [')'] = '(' }
@@ -271,12 +288,6 @@ end
 
 local function read(code)
    local tokens = tokenize(code)
-   for i = 1, #tokens do
-      local n = tonumber(tokens[i])
-      if n ~= nil then
-	 tokens[i] = n
-      end
-   end
    local grouped = group(tokens)
    return grouped
 end
@@ -309,7 +320,7 @@ end
 _G.env = {
    scope = {
       ['print'] = function(args)
-	 io.write(tostring(args[2]))
+	 io.write(_G.lua_tostring(args[2]))
 	 io.write("\n")
 	 return nil
       end,
@@ -323,6 +334,18 @@ _G.env = {
 	 env_set(env, args[2], set_tag({ args[3][1], args[4] }, "fun"))
 	 return nil
       end,
+      ['if'] = function(args, env, eval)
+	 if eval(args[2], env) then
+	    return eval(args[3], env)
+	 elseif args[4] == "else" then
+	    return eval(args[5], env)
+	 end
+	 return nil
+      end,
+      ['eval'] = function(args, env, eval)
+	 return eval(args[2], env)
+      end,
+      ['>'] = function(args) return args[2] > args[3] end,
       ['+'] = function(args) return args[2] + args[3] end,
       ['*'] = function(args) return args[2] * args[3] end,
       ['/'] = function(args) return args[2] / args[3] end,
@@ -348,7 +371,7 @@ local function apply(args, env, eval)
        return eval(body, env)
     end
     if type(cmd) == "function" then
-       return cmd(args, env)
+       return cmd(args, env, eval)
     end
 end
 
@@ -361,34 +384,46 @@ local function evaluate(exp, env)
       end
       return value
    end
+   if type(exp) == "string" and exp:sub(1, 1) == '"' then
+      return exp:sub(2, -2)
+   end
    if type(exp) == "string" and exp:sub(1, 1) == "$" then
       return env_get(env, exp:sub(2))
    end
    if type(exp) == "table" then
-      -- Apply the arguments (including the command name)
+      -- Build a new args table; don't mutate the AST
       -- script-tagged tables are quoted: leave them unevaluated
+      local args = {}
       for i = 1, #exp do
-	 if not tag_is(exp[i], "script") then
-	    exp[i] = evaluate(exp[i], env)
+	 if tag_is(exp[i], "script") then
+	    args[i] = exp[i]
+	 else
+	    args[i] = evaluate(exp[i], env)
 	 end
       end
 
-      return apply(exp, env, evaluate)
+      return apply(args, env, evaluate)
    end
    return exp
 end
 
 local ast = read [[
-fun a {x} do
-  var y [+ $x 1]
-  + $x $y
+fun do-times {n blk} do
+  if {> $n 0} do
+     eval $blk
+     do-times [- $n 1] $blk
+  else
+    print "DONE!"
+  end
 end
 
-a 10
+do-times 10 do
+  print "Hello, World!"
+end
 
 ]]
 
-print(ast)
+-- print(ast)
 print(evaluate(ast, env))
 
 return {
