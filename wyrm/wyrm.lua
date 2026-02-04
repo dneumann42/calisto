@@ -440,20 +440,20 @@ fun while {exp blk} do
   end
 end
 
-fun for {name count blk} do
+fun for {name start count blk} do
   fun loop {i} do
-     var name $i
+     var $name $i
      eval $blk
      if {< $i [eval $count]} do
        loop [+ $i 1]
      end
   end
-  loop 0 $count
+  loop $start
 end
 
 -- load base
 
-for idx 5 do
+for idx -10 5 do
   print $idx
 end
 
