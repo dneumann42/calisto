@@ -1,0 +1,4 @@
+return {
+    pattern = "test_",
+    path    = "tests",
+}
