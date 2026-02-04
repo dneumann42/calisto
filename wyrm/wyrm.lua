@@ -317,56 +317,74 @@ local function env_set(env, key, value)
    return value
 end
 
-_G.env = {
-   scope = {
-      ['print'] = function(args)
-	 io.write(_G.lua_tostring(args[2]))
-	 io.write("\n")
-	 return nil
-      end,
-      ['var'] = function(args, env)
-	 local name = args[2]
-	 env_set(env, name, args[3])
-	 env_set(
-	    env,
-	    name .. "=",
-	    function(args, env, eval)
-	       local e = env
-	       while e ~= nil do
-		  if e.scope[name] then
-		     e.scope[name] = args[2]
-		     break
-		  else
-		     e = e.parent
-		  end
+local wyrm_base = {
+   ['print'] = function(args)
+      io.write(_G.lua_tostring(args[2]))
+      io.write("\n")
+      return nil
+   end,
+   ['var'] = function(args, env)
+      local name = args[2]
+      env_set(env, name, args[3])
+      env_set(
+	 env,
+	 name .. "=",
+	 function(args, env, eval)
+	    local e = env
+	    while e ~= nil do
+	       if e.scope[name] then
+		  e.scope[name] = args[2]
+		  break
+	       else
+		  e = e.parent
 	       end
-	 end)
+	    end
+      end)
+      return nil
+   end,
+   ['fun'] = function(args, env)
+      env_set(env, args[2], set_tag({ args[3][1], args[4] }, "fun"))
+      return nil
+   end,
+   ['if'] = function(args, env, eval)
+      if eval(args[2], env) then
+	 return eval(args[3], env)
+      elseif args[4] == "else" then
+	 return eval(args[5], env)
+      end
+      return nil
+   end,
+   ['eval'] = function(args, env, eval)
+      return eval(args[2], env)
+   end,
+   ['lua'] = function(args, env, eval)
+      local code = {}
+      for i = 2, #args do
+	 table.insert(code, _G.lua_tostring(args[i]))
+      end
+      local script = table.concat(code, " ")
+      local fn, compile_err = load(script, "wyrm", "t")
+      if fn == nil then
+	 -- retry as an expression
+	 fn, compile_err = load("return " .. script, "wyrm", "t")
+      end
+      if fn == nil then
+	 print("lua compile error: " .. _G.lua_tostring(compile_err))
 	 return nil
-      end,
-      ['fun'] = function(args, env)
-	 -- args[3] is the params script {x y ...}, unwrap the single command to get the name list
-	 -- args[4] is the body script, kept unevaluated
-	 env_set(env, args[2], set_tag({ args[3][1], args[4] }, "fun"))
+      end
+      local ok, result = pcall(fn)
+      if not ok then
+	 print("lua runtime error: " .. _G.lua_tostring(result))
 	 return nil
-      end,
-      ['if'] = function(args, env, eval)
-	 if eval(args[2], env) then
-	    return eval(args[3], env)
-	 elseif args[4] == "else" then
-	    return eval(args[5], env)
-	 end
-	 return nil
-      end,
-      ['eval'] = function(args, env, eval)
-	 return eval(args[2], env)
-      end,
-      ['>'] = function(args) return args[2] > args[3] end,
-      ['<'] = function(args) return args[2] < args[3] end,
-      ['+'] = function(args) return args[2] + args[3] end,
-      ['*'] = function(args) return args[2] * args[3] end,
-      ['/'] = function(args) return args[2] / args[3] end,
-      ['-'] = function(args) return args[2] - args[3] end,
-   }
+      end
+      return result
+   end,
+   ['>'] = function(args) return args[2] > args[3] end,
+   ['<'] = function(args) return args[2] < args[3] end,
+   ['+'] = function(args) return args[2] + args[3] end,
+   ['*'] = function(args) return args[2] * args[3] end,
+   ['/'] = function(args) return args[2] / args[3] end,
+   ['-'] = function(args) return args[2] - args[3] end,
 }
 
 local function apply(args, env, eval)
@@ -407,8 +425,6 @@ local function evaluate(exp, env)
       return env_get(env, exp:sub(2))
    end
    if type(exp) == "table" then
-      -- Build a new args table; don't mutate the AST
-      -- script-tagged tables are quoted: leave them unevaluated
       local args = {}
       for i = 1, #exp do
 	 if tag_is(exp[i], "script") then
@@ -417,50 +433,83 @@ local function evaluate(exp, env)
 	    args[i] = evaluate(exp[i], env)
 	 end
       end
-
       return apply(args, env, evaluate)
    end
    return exp
 end
 
-local ast = read [[
-fun do-times {n blk} do
-  if {> $n 0} do
-     eval $blk
-     do-times [- $n 1] $blk
-  else
-    print "DONE!"
-  end
+local function ext(a, b)
+   for k, v in pairs(b) do
+      a[k] = v
+   end
+   return a
 end
 
-fun while {exp blk} do
-  if {eval $exp} do
-    eval $blk
-    while $exp $blk
-  end
+local Wyrm = {}
+
+function Wyrm.new()
+   local self = { modules = {} }
+   self.env = {
+	 scope = ext(
+	    wyrm_base, {
+	       ["export"] = function(args, env, eval)
+		  for i = 2, #args do
+		     env_set(self.env, args[i], env_get(env, args[i]))
+		  end
+	       end
+	 })
+   }
+
+   local function get_filename(path)
+      local i = #path
+      local back = i
+      while i > 1 do
+	 local ch = path:sub(i, i)
+	 if ch == "." then
+	    back = i- 1
+	 end
+	 if ch == "/" or ch == "\\" then
+	    i = i + 1
+	    break
+	 end
+	 i = i - 1
+      end
+      return path:sub(i, back)
+   end
+
+   function self:load_module(path)
+      local f = io.open(path)
+      if f == nil then
+	 return nil
+      end
+      local content = f:read("*a")
+      f:close()
+      local module = self:eval(content)
+      local module_name = get_filename(path)
+      self.modules[module_name] = module
+      env_set(self.env, module_name, module)
+      return module
+   end
+
+   function self:eval(code)
+      return self:eval_expr(read(code))
+   end
+
+   function self:eval_expr(expr)
+      return evaluate(expr, next_env(self.env))
+   end
+
+   return self
 end
 
-fun for {name start count blk} do
-  fun loop {i} do
-     var $name $i
-     eval $blk
-     if {< $i [eval $count]} do
-       loop [+ $i 1]
-     end
-  end
-  loop $start
+local wyrm = Wyrm.new()
+wyrm:load_module("lib/base.wyrm")
+wyrm:load_module("lib/repl.wyrm")
+wyrm:eval [[
+for i 0 10 do
+  print $i
 end
-
--- load base
-
-for idx -10 5 do
-  print $idx
-end
-
 ]]
-
--- print(ast)
-print(evaluate(ast, env))
 
 return {
     tokenize = tokenize,

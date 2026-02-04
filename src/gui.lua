@@ -14,7 +14,7 @@ local bar = Widgets.bar:new {
    opacity = 0.5,
    widgets = {
       Widgets.button:new {
-         label = "#",
+         label = "Hello",
          css = css(Theme.Button),
          on_clicked = function()
             print("HERE!")
@@ -27,7 +27,7 @@ local bar = Widgets.bar:new {
 	 tick = function()
 	    return not stopped
 	 end
-      }
+      },
    }
 }
 

@@ -2,7 +2,25 @@ fun do-times {n blk} do
   if {> $n 0} do
      eval $blk
      do-times [- $n 1] $blk
-  else
-    print "DONE!"
   end
 end
+
+fun while {exp blk} do
+  if {eval $exp} do
+    eval $blk
+    while $exp $blk
+  end
+end
+
+fun for {name start count blk} do
+  fun loop {i} do
+     var $name $i
+     eval $blk
+     if {< $i [eval $count]} do
+       loop [+ $i 1]
+     end
+  end
+  loop $start
+end
+
+export for while do-times read-line
