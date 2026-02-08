@@ -1,22 +1,33 @@
 return {
-   Button = [[
+    Button = [[
    button {
-      background-image: linear-gradient(135deg, {accent}, {surface});
+      background-color: {surface_alt};
       color: {fg};
-      border: 1px solid {accent};
-      border-radius: 12px;
-      padding: 0px 8px;
+      border-style: solid;
+      border-width: 2px;
+      border-top-color: {fg_alt};
+      border-left-color: {fg_alt};
+      border-bottom-color: {bg};
+      border-right-color: {bg};
+      border-radius: 3px;
+      padding: 2px 8px;
       margin: 0px 2px;
+      box-shadow: none;
    }
    button:hover {
-      background-image: linear-gradient(135deg, {surface}, {surface_alt});
-      border-color: {border};
+      background-color: {hover_bg};
+      border-top-color: {accent};
+      border-left-color: {accent};
    }
    button:active {
-      background-image: linear-gradient(135deg, {surface}, {accent});
+      background-color: {surface};
+      border-top-color: {bg};
+      border-left-color: {bg};
+      border-bottom-color: {fg_alt};
+      border-right-color: {fg_alt};
    }
   ]],
-  Clock = [[
+    Clock = [[
   label {
      background-image: linear-gradient(135deg, {accent_alt}, {surface});
      color: {fg};
@@ -26,7 +37,7 @@ return {
      margin: 0px 2px;
   }
   ]],
-  Workspaces = [[
+    Workspaces = [[
   .workspace {
      padding: 0px 8px;
      margin: 0px 2px;
