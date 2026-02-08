@@ -5,7 +5,11 @@ local pp = require("pprint") -- ADDED
 
 local THEME_PATH = (os.getenv("HOME") or "") .. "/.config/calisto/theme.lua"
 
-local Theme = require("theme")
+local function load_theme_styles()
+   -- Force reload by clearing package cache
+   package.loaded["theme"] = nil
+   return require("theme")
+end
 
 local function load_wallust_theme()
    local f = io.open(THEME_PATH, "r")
@@ -22,41 +26,57 @@ local function hex_rgba(hex, alpha)
    return string.format("rgba(%d,%d,%d,%s)", r, g, b, alpha)
 end
 
-local UI  = {
-   theme = load_wallust_theme() or {
-      bg          = "#1e1e2e",
-      surface     = "#313244",
-      surface_alt = "#45475a",
-      fg          = "#cdd6f4",
-      fg_alt      = "#bac2de",
-      fg_muted    = "#585b70",
-      border      = "#45475a",
-      accent      = "#89b4fa",
-      accent_alt  = "#74c7ec",
-      success     = "#a6e3a1",
-      warning     = "#f9e2af",
-      error       = "#f38ba8",
-      info        = "#89dceb",
-      highlight   = "#585b70",
-      urgent_bg   = "#bf616a", -- Example urgent background
-      urgent_fg   = "#eceff4", -- Example urgent foreground
-      hover_bg    = "#4c566a", -- Example hover background
-   }
+local default_theme = {
+   bg          = "#1e1e2e",
+   surface     = "#313244",
+   surface_alt = "#45475a",
+   fg          = "#cdd6f4",
+   fg_alt      = "#bac2de",
+   fg_muted    = "#585b70",
+   border      = "#45475a",
+   accent      = "#89b4fa",
+   accent_alt  = "#74c7ec",
+   success     = "#a6e3a1",
+   warning     = "#f9e2af",
+   error       = "#f38ba8",
+   info        = "#89dceb",
+   highlight   = "#585b70",
+   urgent_bg   = "#bf616a",
+   urgent_fg   = "#eceff4",
+   hover_bg    = "#4c566a",
 }
+
+local UI  = {
+   theme = load_wallust_theme() or default_theme
+}
+
+function UI:reload_theme()
+   self.theme = load_wallust_theme() or default_theme
+end
 
 function UI:apply_theme(opacity, font, font_size)
    opacity = opacity or 0.5
    font = font or "monospace"
    font_size = font_size or 10
 
-   local win_css = string.format([[
+   -- Reload theme styles to pick up any changes
+   local Theme = load_theme_styles()
+
+   -- Helper to replace color placeholders with fallback to defaults
+   local function replace_colors(text)
+      return text:gsub("{([%w_]+)}", function(key)
+         return self.theme[key] or default_theme[key] or "#000000"
+      end)
+   end
+
+   local win_css = replace_colors(string.format([[
       window {
          background-color: rgba(0, 0, 0, %f);
          color: {fg};
          font-family: %s;
          font-size: %dpt;
       }
-   ]], opacity, font, font_size):gsub("{([%w_]+)}", self.theme)
+   ]], opacity, font, font_size))
 
    local core_app_css = [[
       headerbar {
@@ -162,9 +182,9 @@ function UI:apply_theme(opacity, font, font_size)
       .info    { color: {info}; }
    ]]
 
-   local themed_core_app_css = core_app_css:gsub("{([%w_]+)}", self.theme)
-   local themed_workspaces_css = Theme.Workspaces:gsub("{([%w_]+)}", self.theme)
-   local themed_media_css = Theme.Media and Theme.Media:gsub("{([%w_]+)}", self.theme) or ""
+   local themed_core_app_css = replace_colors(core_app_css)
+   local themed_workspaces_css = Theme and Theme.Workspaces and replace_colors(Theme.Workspaces) or ""
+   local themed_media_css = Theme and Theme.Media and replace_colors(Theme.Media) or ""
 
    local css = win_css .. themed_core_app_css .. themed_workspaces_css .. themed_media_css
 

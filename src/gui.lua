@@ -127,7 +127,9 @@ local bar = Widgets.bar:new {
          gap = 2,  -- Gap between workspace buttons in pixels
       },
       Widgets.hspacer:new(),
-      -- Widgets.media:new {},  -- Uncomment to add media controls
+      -- Widgets.media:new {  -- Uncomment to add media controls
+      --    css = css(Theme.Media),
+      -- },
       Widgets.clock:new {
          css = css(Theme.Clock),
          tick = function()
@@ -268,7 +270,12 @@ reload_bar()
 
 -- Function to reload theme and bar
 local function reload_theme_and_bar()
-   Theme = load_theme()
+   UI:reload_theme()  -- Reload wallust colors
+   Theme = load_theme()  -- Reload widget styles
+   -- Apply global CSS BEFORE creating widgets so they pick up new styles
+   -- Use defaults for opacity/font since bar config hasn't been loaded yet
+   -- Bar creation will call UI:apply_theme again with correct settings
+   UI:apply_theme(0.5, "monospace", 10)
    reload_bar()
 end
 
