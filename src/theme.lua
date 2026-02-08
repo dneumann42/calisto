@@ -13,6 +13,7 @@ return {
       padding: 0px 8px;
       margin: 0px 2px;
       box-shadow: none;
+      min-height: {widget_height};
    }
    button:hover {
       background-color: {hover_bg};
@@ -40,6 +41,7 @@ return {
      border-radius: 0px;
      padding: 0px 8px;
      margin: 0px 2px;
+     min-height: {widget_height};
   }
   ]],
     Workspaces = [[
@@ -56,6 +58,7 @@ return {
       padding: 0px 8px;
       margin: 0px 2px;
       box-shadow: none;
+      min-height: {widget_height};
   }
   .workspace.focused {
      background-color: {accent}; /* Focused background color */
@@ -86,6 +89,7 @@ return {
      border-radius: 0px;
      padding: 0px 8px;
      margin: 0px 0px 0px 2px;
+     min-height: {widget_height};
   }
   .media-pill-middle {
      background-image: linear-gradient(135deg, {success}, {surface});
@@ -99,6 +103,7 @@ return {
      border-radius: 0px;
      padding: 0px 8px;
      margin: 0px 0px;
+     min-height: {widget_height};
   }
   .media-pill-right {
      background-image: linear-gradient(135deg, {success}, {surface});
@@ -112,6 +117,7 @@ return {
      border-radius: 0px;
      padding: 0px 8px;
      margin: 0px 2px 0px 0px;
+     min-height: {widget_height};
   }
   .media-pill-left:hover, .media-pill-middle:hover, .media-pill-right:hover {
      background-image: linear-gradient(135deg, {success}, {surface_alt});
@@ -132,6 +138,7 @@ return {
      border-radius: 0px;
      padding: 0px 8px;
      margin: 0px 2px;
+     min-height: {widget_height};
   }
   ]],
     Audio = [[
@@ -147,6 +154,7 @@ return {
      border-radius: 0px;
      padding: 0px 8px;
      margin: 0px 2px;
+     min-height: {widget_height};
   }
   ]],
     Network = [[
@@ -162,6 +170,7 @@ return {
      border-radius: 0px;
      padding: 0px 8px;
      margin: 0px 2px;
+     min-height: {widget_height};
   }
   ]],
 }

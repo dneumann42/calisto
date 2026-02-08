@@ -104,7 +104,7 @@ function Widgets.bar:new(cfg)
     bar:set_valign(Gtk.Align.CENTER)
 
     -- Always apply theme to ensure colors are updated
-    UI:apply_theme(cfg.opacity, cfg.font, cfg.font_size)
+    UI:apply_theme(cfg.opacity, cfg.font, cfg.font_size, cfg.widget_height)
 
     local widgets = cfg.widgets or {}
     for i = 1, #widgets do

@@ -47,17 +47,22 @@ local default_theme = {
 }
 
 local UI  = {
-   theme = load_wallust_theme() or default_theme
+   theme = load_wallust_theme() or default_theme,
+   widget_height = 28
 }
 
 function UI:reload_theme()
    self.theme = load_wallust_theme() or default_theme
 end
 
-function UI:apply_theme(opacity, font, font_size)
+function UI:apply_theme(opacity, font, font_size, widget_height)
    opacity = opacity or 0.5
    font = font or "monospace"
    font_size = font_size or 10
+   widget_height = widget_height or 28
+
+   -- Store widget_height in UI object so css() function can access it
+   self.widget_height = widget_height
 
    -- Reload theme styles to pick up any changes
    local Theme = load_theme_styles()
@@ -65,7 +70,15 @@ function UI:apply_theme(opacity, font, font_size)
    -- Helper to replace color placeholders with fallback to defaults
    local function replace_colors(text)
       return text:gsub("{([%w_]+)}", function(key)
-         return self.theme[key] or default_theme[key] or "#000000"
+         -- Don't replace widget_height here - it will be replaced later
+         if key == "widget_height" then
+            return "{widget_height}"
+         end
+         local color = self.theme[key] or default_theme[key] or "#000000"
+         if not color:match("^#%x%x%x%x%x%x$") then
+            print("WARNING: Invalid color for key '" .. key .. "': " .. tostring(color))
+         end
+         return color
       end)
    end
 
@@ -190,6 +203,9 @@ function UI:apply_theme(opacity, font, font_size)
    local themed_network_css = Theme and Theme.Network and replace_colors(Theme.Network) or ""
 
    local css = win_css .. themed_core_app_css .. themed_workspaces_css .. themed_media_css .. themed_window_css .. themed_audio_css .. themed_network_css
+
+   -- Replace widget_height placeholder
+   css = css:gsub("{widget_height}", widget_height .. "px")
 
    -- swap provider so repeated import() calls don't accumulate them
    local display = Gdk.Display.get_default()

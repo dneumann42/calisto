@@ -9,7 +9,13 @@ local default_theme = import("theme")
 -- interpolate {theme_key} placeholders from the active palette
 local function css(str)
    if not str then return "" end
-   return str:gsub("{([%w_]+)}", UI.theme)
+   -- Replace widget_height placeholder FIRST (before color replacement removes it)
+   local result = str:gsub("{widget_height}", (UI.widget_height or 28) .. "px")
+   -- Replace color placeholders with fallback to default colors
+   result = result:gsub("{([%w_]+)}", function(key)
+      return UI.theme[key] or default_theme[key] or "#000000"
+   end)
+   return result
 end
 
 -- Theme loading and merging
@@ -111,9 +117,10 @@ local function create_default_bar_config()
 
 local bar = Widgets.bar:new {
    opacity = 0.5,
-   font = "monospace",  -- Font family (e.g., "monospace", "sans-serif", "JetBrains Mono")
-   font_size = 10,      -- Font size in points
-   gap = 4,             -- Gap between widgets in pixels
+   font = "monospace",    -- Font family (e.g., "monospace", "sans-serif", "JetBrains Mono")
+   font_size = 10,        -- Font size in points
+   widget_height = 28,    -- Widget height in pixels
+   gap = 4,               -- Gap between widgets in pixels
    widgets = {
       Widgets.button:new {
          label = "Hello",
@@ -282,9 +289,9 @@ local function reload_theme_and_bar()
    UI:reload_theme()  -- Reload wallust colors
    Theme = load_theme()  -- Reload widget styles
    -- Apply global CSS BEFORE creating widgets so they pick up new styles
-   -- Use defaults for opacity/font since bar config hasn't been loaded yet
+   -- Use defaults for opacity/font/widget_height since bar config hasn't been loaded yet
    -- Bar creation will call UI:apply_theme again with correct settings
-   UI:apply_theme(0.5, "monospace", 10)
+   UI:apply_theme(0.5, "monospace", 10, 28)
    reload_bar()
 end
 
