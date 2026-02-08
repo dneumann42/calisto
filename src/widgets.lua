@@ -87,8 +87,8 @@ function Widgets.bar:new(cfg)
    local bar = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
    bar:set_valign(Gtk.Align.CENTER)
 
-   if cfg.opacity then
-      UI:apply_theme(cfg.opacity)
+   if cfg.opacity or cfg.font or cfg.font_size then
+      UI:apply_theme(cfg.opacity, cfg.font, cfg.font_size)
    end
 
    local widgets = cfg.widgets or {}

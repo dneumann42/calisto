@@ -44,14 +44,19 @@ local UI  = {
    }
 }
 
-function UI:apply_theme(opacity)
+function UI:apply_theme(opacity, font, font_size)
    opacity = opacity or 0.5
+   font = font or "monospace"
+   font_size = font_size or 10
+
    local win_css = string.format([[
       window {
          background-color: rgba(0, 0, 0, %f);
          color: {fg};
+         font-family: %s;
+         font-size: %dpt;
       }
-   ]], opacity):gsub("{([%w_]+)}", self.theme)
+   ]], opacity, font, font_size):gsub("{([%w_]+)}", self.theme)
 
    local core_app_css = [[
       headerbar {

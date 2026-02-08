@@ -122,6 +122,8 @@ local function create_default_bar_config()
 
 local bar = Widgets.bar:new {
    opacity = 0.5,
+   font = "monospace",  -- Font family (e.g., "monospace", "sans-serif", "JetBrains Mono")
+   font_size = 10,      -- Font size in points
    widgets = {
       Widgets.button:new {
          label = "Hello",
@@ -248,25 +250,34 @@ local function reload_bar()
 
    -- Clean up old bar
    if current_cleanup then
+      print("Cleaning up old bar")
       current_cleanup()
    end
    if current_bar then
+      print("Removing old bar from container")
       container:remove(current_bar)
+      current_bar = nil
    end
 
    -- Load new bar
+   print("Loading new bar config...")
    local success, bar, cleanup = pcall(load_bar_config)
    if not success then
       print("Error loading bar config: " .. tostring(bar))
       return
    end
 
+   print("Bar config loaded successfully")
    current_bar = bar
    current_cleanup = cleanup
 
    -- Add new bar to container
    if bar then
+      print("Appending new bar to container")
       container:append(bar)
+      print("Bar reload complete")
+   else
+      print("Warning: bar is nil!")
    end
 end
 
@@ -281,15 +292,22 @@ local function reload_theme_and_bar()
 end
 
 -- Set up file monitoring for bar config
+print("Setting up file monitor for: " .. bar_config_path)
 local bar_file = Gio.File.new_for_path(bar_config_path)
 local bar_monitor = bar_file:monitor_file(Gio.FileMonitorFlags.NONE, nil)
+print("Bar config monitor created: " .. tostring(bar_monitor))
 
 bar_monitor.on_changed = function(_mon, _file, _other_file, event_type)
-   if event_type == Gio.FileMonitorEvent.CHANGES_DONE_HINT or
-      event_type == Gio.FileMonitorEvent.CREATED or
-      event_type == Gio.FileMonitorEvent.CHANGED then
+   local event_name = tostring(event_type)
+   print("Bar config change detected! Event: " .. event_name)
+   -- event_type is a string, not a number, so compare strings
+   if event_name == "CHANGES_DONE_HINT" or
+      event_name == "CREATED" or
+      event_name == "CHANGED" then
+      print("Scheduling bar reload in 100ms...")
       -- Small delay to ensure file is fully written
       GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, function()
+         print("Executing reload_bar()")
          reload_bar()
          return false -- Don't repeat
       end)
@@ -306,9 +324,11 @@ local user_styles_file = Gio.File.new_for_path(user_styles_path)
 local user_styles_monitor = user_styles_file:monitor_file(Gio.FileMonitorFlags.NONE, nil)
 
 user_styles_monitor.on_changed = function(_mon, _file, _other_file, event_type)
-   if event_type == Gio.FileMonitorEvent.CHANGES_DONE_HINT or
-      event_type == Gio.FileMonitorEvent.CREATED or
-      event_type == Gio.FileMonitorEvent.CHANGED then
+   local event_name = tostring(event_type)
+   -- event_type is a string, not a number, so compare strings
+   if event_name == "CHANGES_DONE_HINT" or
+      event_name == "CREATED" or
+      event_name == "CHANGED" then
       GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, function()
          reload_theme_and_bar()
          return false
