@@ -55,10 +55,9 @@ local function load_theme()
                for k, v in pairs(theme) do
                   merged[k] = v
                end
-               print("Loaded default theme from " .. default_theme_path)
             end
          else
-            print("Error loading default theme: " .. tostring(err))
+            print("ERROR: Failed to load default theme:", tostring(err))
          end
       end
    else
@@ -66,7 +65,6 @@ local function load_theme()
       for k, v in pairs(default_theme) do
          merged[k] = v
       end
-      print("Using cached default theme")
    end
 
    -- Load and merge user styles if they exist
@@ -82,22 +80,13 @@ local function load_theme()
             for k, v in pairs(user_styles) do
                merged[k] = v
             end
-            print("Loaded user style overrides from " .. user_styles_path)
          end
       else
-         print("Error loading user styles: " .. tostring(err))
+         print("ERROR: Failed to load user styles:", tostring(err))
       end
    end
 
    current_theme = merged
-
-   -- Debug: show what theme keys are available
-   local keys = {}
-   for k in pairs(merged) do
-      table.insert(keys, k)
-   end
-   print("Theme loaded with keys: " .. table.concat(keys, ", "))
-
    return current_theme
 end
 
@@ -124,6 +113,7 @@ local bar = Widgets.bar:new {
    opacity = 0.5,
    font = "monospace",  -- Font family (e.g., "monospace", "sans-serif", "JetBrains Mono")
    font_size = 10,      -- Font size in points
+   gap = 4,             -- Gap between widgets in pixels
    widgets = {
       Widgets.button:new {
          label = "Hello",
@@ -134,8 +124,10 @@ local bar = Widgets.bar:new {
       },
       Widgets.workspaces:new {
          css = css(Theme.Workspaces),
+         gap = 2,  -- Gap between workspace buttons in pixels
       },
       Widgets.hspacer:new(),
+      -- Widgets.media:new {},  -- Uncomment to add media controls
       Widgets.clock:new {
          css = css(Theme.Clock),
          tick = function()
@@ -246,38 +238,28 @@ local current_cleanup = nil
 
 -- Function to reload the bar
 local function reload_bar()
-   print("Reloading bar configuration from " .. bar_config_path)
-
    -- Clean up old bar
    if current_cleanup then
-      print("Cleaning up old bar")
       current_cleanup()
    end
    if current_bar then
-      print("Removing old bar from container")
       container:remove(current_bar)
       current_bar = nil
    end
 
    -- Load new bar
-   print("Loading new bar config...")
    local success, bar, cleanup = pcall(load_bar_config)
    if not success then
-      print("Error loading bar config: " .. tostring(bar))
+      print("ERROR: Failed to load bar config:", tostring(bar))
       return
    end
 
-   print("Bar config loaded successfully")
    current_bar = bar
    current_cleanup = cleanup
 
    -- Add new bar to container
    if bar then
-      print("Appending new bar to container")
       container:append(bar)
-      print("Bar reload complete")
-   else
-      print("Warning: bar is nil!")
    end
 end
 
@@ -286,30 +268,22 @@ reload_bar()
 
 -- Function to reload theme and bar
 local function reload_theme_and_bar()
-   print("Reloading theme...")
    Theme = load_theme()
    reload_bar()
 end
 
 -- Set up file monitoring for bar config
-print("Setting up file monitor for: " .. bar_config_path)
 local bar_file = Gio.File.new_for_path(bar_config_path)
 local bar_monitor = bar_file:monitor_file(Gio.FileMonitorFlags.NONE, nil)
-print("Bar config monitor created: " .. tostring(bar_monitor))
 
 bar_monitor.on_changed = function(_mon, _file, _other_file, event_type)
    local event_name = tostring(event_type)
-   print("Bar config change detected! Event: " .. event_name)
-   -- event_type is a string, not a number, so compare strings
    if event_name == "CHANGES_DONE_HINT" or
       event_name == "CREATED" or
       event_name == "CHANGED" then
-      print("Scheduling bar reload in 100ms...")
-      -- Small delay to ensure file is fully written
       GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, function()
-         print("Executing reload_bar()")
          reload_bar()
-         return false -- Don't repeat
+         return false
       end)
    end
 end
@@ -317,8 +291,24 @@ end
 -- Note: src/theme.lua is already monitored by calisto.lua's poller
 -- We only need to monitor user config files here
 
+-- Set up file monitoring for wallust theme (theme.lua)
+local wallust_theme_path = config_dir .. "/theme.lua"
+local wallust_theme_file = Gio.File.new_for_path(wallust_theme_path)
+local wallust_theme_monitor = wallust_theme_file:monitor_file(Gio.FileMonitorFlags.NONE, nil)
+
+wallust_theme_monitor.on_changed = function(_mon, _file, _other_file, event_type)
+   local event_name = tostring(event_type)
+   if event_name == "CHANGES_DONE_HINT" or
+      event_name == "CREATED" or
+      event_name == "CHANGED" then
+      GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, function()
+         reload_theme_and_bar()
+         return false
+      end)
+   end
+end
+
 -- Set up file monitoring for user styles (styles.lua)
--- Note: theme.lua is for wallust and doesn't need monitoring here
 local user_styles_path = config_dir .. "/styles.lua"
 local user_styles_file = Gio.File.new_for_path(user_styles_path)
 local user_styles_monitor = user_styles_file:monitor_file(Gio.FileMonitorFlags.NONE, nil)
@@ -343,6 +333,9 @@ return container, function()
    end
    if bar_monitor then
       bar_monitor:cancel()
+   end
+   if wallust_theme_monitor then
+      wallust_theme_monitor:cancel()
    end
    if user_styles_monitor then
       user_styles_monitor:cancel()

@@ -68,4 +68,43 @@ return {
      background-color: {hover_bg}; /* Hover background color */
   }
   ]],
+    Media = [[
+  .media-pill-left {
+     background-image: linear-gradient(135deg, {success}, {surface});
+     color: {fg};
+     border-top: 1px solid {success};
+     border-bottom: 1px solid {success};
+     border-left: 1px solid {success};
+     border-right: 0.5px solid {success};
+     border-radius: 12px 0 0 12px;
+     padding: 0px 8px;
+     margin: 0px 0px 0px 2px;
+  }
+  .media-pill-middle {
+     background-image: linear-gradient(135deg, {success}, {surface});
+     color: {fg};
+     border-top: 1px solid {success};
+     border-bottom: 1px solid {success};
+     border-right: 0.5px solid {success};
+     border-left: 0.5px solid {success};
+     border-radius: 0;
+     padding: 0px 8px;
+     margin: 0px 0px;
+  }
+  .media-pill-right {
+     background-image: linear-gradient(135deg, {success}, {surface});
+     color: {fg};
+     border-top: 1px solid {success};
+     border-bottom: 1px solid {success};
+     border-right: 1px solid {success};
+     border-left: 0.5px solid {success};
+     border-radius: 0 12px 12px 0;
+     padding: 0px 8px;
+     margin: 0px 2px 0px 0px;
+  }
+  .media-pill-left:hover, .media-pill-middle:hover, .media-pill-right:hover {
+     background-image: linear-gradient(135deg, {success}, {surface_alt});
+     border-color: {success};
+  }
+  ]],
 }

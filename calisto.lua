@@ -66,23 +66,17 @@ local window
 local gui_cleanup
 
 local function reload()
-    print("[calisto] Reloading GUI from: " .. GUI_PATH)
     if gui_cleanup then gui_cleanup(); gui_cleanup = nil end
 
     local ok, widget, clean = pcall(dofile, GUI_PATH)
     if not ok then
-        print("[calisto] ERROR: " .. tostring(widget))   -- widget holds the error msg
+        print("[calisto] ERROR: " .. tostring(widget))
         return
     end
 
-    print("[calisto] Reload successful")
     gui_cleanup = clean
     if window then
-        print("[calisto] Setting new widget as window child")
         window:set_child(widget)
-        print("[calisto] Window child updated")
-    else
-        print("[calisto] Warning: window is nil!")
     end
 end
 
@@ -111,13 +105,11 @@ local WATCHED = scan_src()
 local function start_poller()
     local cache = {}
     for _, path in ipairs(WATCHED) do cache[path] = mtime(path) end
-    print("[calisto] Watching " .. #WATCHED .. " files in src/")
 
     GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, function()
         for _, path in ipairs(WATCHED) do
             local current = mtime(path)
             if current ~= cache[path] then
-                print("[calisto] File changed: " .. path)
                 cache[path] = current
                 reload()
                 break                          -- one reload per tick is enough

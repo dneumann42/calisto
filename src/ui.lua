@@ -164,9 +164,9 @@ function UI:apply_theme(opacity, font, font_size)
 
    local themed_core_app_css = core_app_css:gsub("{([%w_]+)}", self.theme)
    local themed_workspaces_css = Theme.Workspaces:gsub("{([%w_]+)}", self.theme)
-   print("Themed Workspaces CSS (before concatenation):", themed_workspaces_css)
+   local themed_media_css = Theme.Media and Theme.Media:gsub("{([%w_]+)}", self.theme) or ""
 
-   local css = win_css .. themed_core_app_css .. themed_workspaces_css
+   local css = win_css .. themed_core_app_css .. themed_workspaces_css .. themed_media_css
 
    -- swap provider so repeated import() calls don't accumulate them
    local display = Gdk.Display.get_default()
