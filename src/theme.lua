@@ -39,10 +39,18 @@ return {
   ]],
     Workspaces = [[
   .workspace {
-     padding: 0px 8px;
-     margin: 0px 2px;
-     border-radius: 12px; /* Consistent with other buttons */
-     color: {fg}; /* Default text color */
+      background-color: {surface_alt};
+      color: {fg};
+      border-style: solid;
+      border-width: 2px;
+      border-top-color: {fg_alt};
+      border-left-color: {fg_alt};
+      border-bottom-color: {bg};
+      border-right-color: {bg};
+      border-radius: 0px;
+      padding: 0px 8px;
+      margin: 0px 2px;
+      box-shadow: none;
   }
   .workspace.focused {
      background-color: {accent}; /* Focused background color */

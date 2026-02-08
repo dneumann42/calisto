@@ -1,3 +1,22 @@
+-- Set up file logging
+local log_file = io.open("/tmp/calisto.log", "w")
+local original_print = print
+_G.print = function(...)
+   local args = {...}
+   local parts = {}
+   for i = 1, #args do
+      parts[i] = tostring(args[i])
+   end
+   local msg = table.concat(parts, "\t")
+   local timestamp = os.date("%H:%M:%S")
+   local line = string.format("[%s] %s\n", timestamp, msg)
+   if log_file then
+      log_file:write(line)
+      log_file:flush()
+   end
+   original_print(...)
+end
+
 local lgi = require("lgi")
 
 -- lgi ships GTK3-era overrides for Gdk and Gtk that crash on GTK4

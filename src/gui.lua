@@ -130,7 +130,9 @@ local bar = Widgets.bar:new {
             print("HERE!")
          end
       },
-      Widgets.workspaces:new {},
+      Widgets.workspaces:new {
+         css = css(Theme.Workspaces),
+      },
       Widgets.hspacer:new(),
       Widgets.clock:new {
          css = css(Theme.Clock),

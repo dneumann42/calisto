@@ -7,54 +7,34 @@ local Json = require("json")
 local UI = require("ui")
 local pp = require("pprint")
 
--- Remove synchronous command runner
--- local function run_shell_command_sync(command)
---     local handle = io.popen(command, "r")
---     if not handle then return nil, "Failed to open pipe" end
---     local output = handle:read("*a")
---     local status = handle:close()
---     if not status then return output, "Command exited with error" end
---     return output, nil
--- end
-
--- Asynchronous command runner
+-- Asynchronous command runner using Gio.Subprocess
 local function run_shell_command_async(command_args, callback)
-    GLib.spawn_async_with_pipes(
-        nil, -- working directory
-        command_args,
-        nil, -- envp
-        GLib.SpawnFlags.SEARCH_PATH,
-        nil, -- child setup
-        nil, -- user data
-        function(pid, stdout_fd, stderr_fd)
-            -- We don't need pid, stdout_fd, stderr_fd here,
-            -- as the actual reading will happen in the callback.
-            -- This function just starts the process.
-        end,
-        function(pid, status, stdout_data, stderr_data)
-            local stdout_str = ""
-            if stdout_data then
-                stdout_str = stdout_data:get_data() -- GLib.Bytes to string
-            end
-            local stderr_str = ""
-            if stderr_data then
-                stderr_str = stderr_data:get_data() -- GLib.Bytes to string
-            end
+   print("run_shell_command_async: " .. table.concat(command_args, " "))
 
-            print(string.format("run_shell_command_async finished for: %s", table.concat(command_args, " ")))
-            print("  Stdout:", stdout_str)
-            print("  Stderr:", stderr_str)
+   local process = Gio.Subprocess.new(
+      command_args,
+      Gio.SubprocessFlags.STDOUT_PIPE + Gio.SubprocessFlags.STDERR_PIPE
+   )
 
-            print("Invoking run_shell_command_async callback...")
-            if status == 0 then
-                callback(stdout_str, nil)
-            else
-                callback(nil, "Command exited with status " .. status .. ": " .. stderr_str)
-            end
-            GLib.spawn_close_pid(pid)
-        end,
-        nil -- user_data for the callback
-    )
+   process:communicate_utf8_async(nil, nil, function(source, result)
+      local ok, stdout, stderr = pcall(function()
+         return source:communicate_utf8_finish(result)
+      end)
+
+      if not ok then
+         print("Error running command:", stdout)
+         callback(nil, "Failed to run command: " .. tostring(stdout))
+         return
+      end
+
+      if process:get_successful() then
+         print("Command succeeded, output:", stdout)
+         callback(stdout, nil)
+      else
+         print("Command failed, stderr:", stderr)
+         callback(nil, "Command failed: " .. tostring(stderr))
+      end
+   end)
 end
 
 local function parse_sway_json(json_str)
@@ -164,6 +144,7 @@ function Widgets.workspaces:new(cfg)
    print("Widgets.workspaces:new called")
    local workspace_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
    workspace_box:set_valign(Gtk.Align.CENTER)
+   workspace_box:set_spacing(2) -- Add some spacing between workspace buttons
 
    -- get_sway_workspaces now takes a callback
    local get_sway_workspaces = function(callback)
@@ -176,7 +157,7 @@ function Widgets.workspaces:new(cfg)
            end
            print("Swaymsg get_workspaces output received (async):", output)
            local parsed_workspaces = parse_sway_json(output)
-           print("Parsed workspaces:", pp.format(parsed_workspaces))
+           print("Parsed workspaces:", pp(parsed_workspaces))
            callback(parsed_workspaces, nil)
        end)
    end
@@ -185,7 +166,7 @@ function Widgets.workspaces:new(cfg)
    local last_states = {}     -- Map from workspace number to its last known state {focused, urgent, urgent, visible}
 
    local function process_workspaces(workspaces)
-       print("Processing workspaces:", pp.format(workspaces))
+       print("Processing workspaces:", pp(workspaces))
        local new_button_order = {} -- To store buttons in the order they should appear
        local new_num_to_ws = {}    -- Map new workspace numbers to their data for easy lookup
 
@@ -267,6 +248,8 @@ function Widgets.workspaces:new(cfg)
        print("Finished processing workspaces.")
    end
 
+   -- Debounced update: only update after events stop for 100ms
+   local update_timer = nil
    local function update_workspaces_ui_from_sway()
       print("update_workspaces_ui_from_sway called")
       get_sway_workspaces(function(workspaces, err)
@@ -279,15 +262,32 @@ function Widgets.workspaces:new(cfg)
       return true -- Continue GLib.timeout_add
    end
 
+   local function schedule_update()
+      -- Cancel existing timer if any
+      if update_timer then
+         GLib.source_remove(update_timer)
+      end
+      -- Schedule update after 100ms of no events
+      update_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, function()
+         print("Debounced update triggered")
+         update_workspaces_ui_from_sway()
+         update_timer = nil
+         return false -- Don't repeat
+      end)
+   end
+
    print("Calling initial update_workspaces_ui_from_sway()")
    update_workspaces_ui_from_sway()
 
    local function subscribe_workspaces()
       print("subscribe_workspaces called - starting swaymsg subscribe process")
-      local cmd = {"swaymsg", "-t", "subscribe", '["workspace"]'}
+      local cmd = {"sh", "-c", "stdbuf -oL swaymsg -m -t subscribe '[\"workspace\"]' | jq -c"}
+      print("Subprocess command: " .. table.concat(cmd, " "))
       local process = Gio.Subprocess.new(cmd, Gio.SubprocessFlags.STDOUT_PIPE + Gio.SubprocessFlags.STDERR_PIPE)
+      print("Subprocess created successfully")
       local stdout_stream = Gio.DataInputStream.new(process:get_stdout_pipe())
       local stderr_stream = Gio.DataInputStream.new(process:get_stderr_pipe()) -- Get stderr stream
+      print("Streams initialized, starting to read lines")
 
       local function restart_subscription(delay)
          print(string.format("Swaymsg subscribe process finished. Restarting in %dms...", delay))
@@ -318,15 +318,25 @@ function Widgets.workspaces:new(cfg)
          end)
       end)
 
+      local cancellable = Gio.Cancellable.new()
+
       local function read_next_line()
-         stdout_stream:read_line_async(GLib.PRIORITY_DEFAULT, nil, function(source_object, res)
+         print("read_next_line() called, starting async read...")
+         stdout_stream:read_line_async(GLib.PRIORITY_DEFAULT, cancellable, function(source_object, res)
             local line, length, err = source_object:read_line_finish(res)
             if line then
                print("Swaymsg subscribe event received:", line)
                local ok, event = pcall(Json.decode, line)
-               if ok and (event.change == "focus" or event.change == "init" or event.change == "empty" or event.change == "rename" or event.change == "urgent" or event.change == "close") then
-                  print("Relevant workspace event, triggering UI update.")
-                  update_workspaces_ui_from_sway()
+               if ok and event.change then
+                  local current_name = event.current and event.current.name or "nil"
+                  local old_name = event.old and event.old.name or "nil"
+                  print(string.format("Workspace event: %s (old: %s -> current: %s), scheduling debounced update.",
+                                     event.change, old_name, current_name))
+                  schedule_update()
+               elseif ok and event.success ~= nil then
+                  print("Swaymsg subscription confirmed: success=" .. tostring(event.success))
+               else
+                  print("Failed to parse event or no change field. ok=" .. tostring(ok) .. ", event=" .. tostring(event))
                end
                read_next_line() -- Continue reading
             elseif err then
@@ -342,10 +352,17 @@ function Widgets.workspaces:new(cfg)
       end
       read_next_line()
    end
-   
-   subscribe_workspaces() -- Start the subscription
 
-   apply_css(workspace_box, (cfg or {}).css or "")
+   print("About to call subscribe_workspaces()...")
+   subscribe_workspaces() -- Start the subscription
+   print("subscribe_workspaces() call completed (async operations may still be running)")
+
+   -- Apply CSS if provided
+   if cfg and cfg.css then
+      apply_css(workspace_box, cfg.css)
+   end
+
+   print("Workspaces widget created, returning workspace_box")
    return workspace_box
 end
 
