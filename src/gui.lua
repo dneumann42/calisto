@@ -7,10 +7,21 @@ local UI = import("ui")
 local default_theme = import("theme")
 
 -- interpolate {theme_key} placeholders from the active palette
-local function css(str)
-   if not str then return "" end
+-- Accepts multiple CSS strings to concatenate together
+local function css(...)
+   local parts = {...}
+   local result = ""
+
+   for _, str in ipairs(parts) do
+      if str then
+         result = result .. str
+      end
+   end
+
+   if result == "" then return "" end
+
    -- Replace widget_height placeholder FIRST (before color replacement removes it)
-   local result = str:gsub("{widget_height}", (UI.widget_height or 28) .. "px")
+   result = result:gsub("{widget_height}", (UI.widget_height or 28) .. "px")
    -- Replace color placeholders with fallback to default colors
    result = result:gsub("{([%w_]+)}", function(key)
       return UI.theme[key] or default_theme[key] or "#000000"
