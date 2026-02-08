@@ -20,10 +20,17 @@ local function load_theme()
    local user_styles_path = config_dir .. "/styles.lua"
 
    -- Load default theme from file
-   local cwd = os.getenv("PWD") or io.popen("pwd"):read("*l")
-   local default_theme_path = cwd .. "/src/theme.lua"
+   -- Use CALISTO_DEV_DIR if set (for nix run . with hotloading), else try PWD
+   local dev_dir = os.getenv("CALISTO_DEV_DIR")
+   local default_theme_path
+   if dev_dir then
+      default_theme_path = dev_dir .. "/src/theme.lua"
+   else
+      local cwd = os.getenv("PWD") or io.popen("pwd"):read("*l")
+      default_theme_path = cwd .. "/src/theme.lua"
+   end
 
-   -- Check if file exists in project directory
+   -- Check if file exists
    local test_file = io.open(default_theme_path, "r")
    if not test_file then
       -- Fall back to using the imported theme

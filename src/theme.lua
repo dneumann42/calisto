@@ -9,8 +9,8 @@ return {
       border-left-color: {fg_alt};
       border-bottom-color: {bg};
       border-right-color: {bg};
-      border-radius: 3px;
-      padding: 2px 8px;
+      border-radius: 0px;
+      padding: 0px 8px;
       margin: 0px 2px;
       box-shadow: none;
    }

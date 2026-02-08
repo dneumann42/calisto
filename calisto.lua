@@ -15,16 +15,25 @@ local BAR_HEIGHT = 40
 
 -- Directory this script lives in — lets us find gui.lua regardless of cwd
 local SCRIPT_DIR = (arg[0] or ""):match("(.+)/") or "."
-local GUI_PATH   = SCRIPT_DIR .. "/src/gui.lua"
+
+-- Support development mode: if CALISTO_DEV_DIR is set, use it for watching/loading
+-- This allows `nix run .` to hotload from the source directory
+local DEV_DIR = os.getenv("CALISTO_DEV_DIR")
+local WATCH_DIR = DEV_DIR or SCRIPT_DIR
+local GUI_PATH = WATCH_DIR .. "/src/gui.lua"
+
+if DEV_DIR then
+   print("[calisto] Development mode: watching " .. DEV_DIR)
+end
 
 -------------------------------------------------------------------------------
 -- import(name)  —  like require, but never caches.  Always reads and evals.
 -- Dot separators map to directories:  import("foo.bar") → foo/bar.lua
--- Paths are resolved relative to SCRIPT_DIR so it works from any cwd.
+-- Paths are resolved relative to WATCH_DIR (dev dir if set, else script dir).
 -- The chunk name is set to "@<path>" so stack traces point to the file.
 -------------------------------------------------------------------------------
 function import(name)                                          -- intentionally global
-    local path = SCRIPT_DIR .. "/src/" .. name:gsub("%.", "/") .. ".lua"
+    local path = WATCH_DIR .. "/src/" .. name:gsub("%.", "/") .. ".lua"
     local f    = io.open(path, "r")
     if not f then error("import: cannot open '" .. path .. "'", 2) end
     local src  = f:read("a"); f:close()
@@ -58,13 +67,13 @@ end
 -- collect all .lua files in src/ at startup
 local function scan_src()
     local files = {}
-    local dir  = Gio.File.new_for_path(SCRIPT_DIR .. "/src")
+    local dir  = Gio.File.new_for_path(WATCH_DIR .. "/src")
     local iter = dir:enumerate_children("standard::name,standard::type", 0, nil)
     local info = iter:next_file(nil)
     while info do
         local name = info:get_name()
         if name:match("%.lua$") then
-            files[#files + 1] = SCRIPT_DIR .. "/src/" .. name
+            files[#files + 1] = WATCH_DIR .. "/src/" .. name
         end
         info = iter:next_file(nil)
     end

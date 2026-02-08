@@ -177,6 +177,12 @@ chmod 0755 %{buildroot}/usr/bin/%{name}
             name  = pname;
             paths = [
               (pkgs.writeShellScriptBin pname ''
+                # Auto-enable hotloading if running from source directory
+                if [ -f "$PWD/flake.nix" ] && [ -d "$PWD/src" ]; then
+                  export CALISTO_DEV_DIR="$PWD"
+                  echo "[calisto] Development mode: hotloading enabled from $PWD"
+                fi
+
                 exec env \
                   GI_TYPELIB_PATH="${giTypelibs}" \
                   LUA_PATH="${calistoData}/share/${pname}/?.lua;${calistoData}/share/${pname}/src/?.lua;${lgi}/share/lua/5.4/?.lua" \
@@ -188,9 +194,28 @@ chmod 0755 %{buildroot}/usr/bin/%{name}
             ];
           };
 
+          # ── development wrapper with hotloading ────────────────────────────
+          calistoDev = pkgs.writeShellScriptBin "${pname}-dev" ''
+            # Auto-detect source directory: if running from a git repo, use that
+            if [ -f "$PWD/flake.nix" ] && [ -d "$PWD/src" ]; then
+              export CALISTO_DEV_DIR="$PWD"
+              echo "[calisto-dev] Hotloading enabled from $PWD"
+            else
+              echo "[calisto-dev] Warning: Not in source directory, hotloading disabled"
+            fi
+
+            exec env \
+              GI_TYPELIB_PATH="${giTypelibs}" \
+              LUA_PATH="${calistoData}/share/${pname}/?.lua;${calistoData}/share/${pname}/src/?.lua;${lgi}/share/lua/5.4/?.lua" \
+              LUA_CPATH="${lgi}/lib/lua/5.4/?.so" \
+              LD_PRELOAD="${layerShell}/lib/libgtk4-layer-shell.so" \
+              ${lua}/bin/lua "${calistoData}/share/${pname}/calisto.lua" "$@"
+          '';
+
         in {
           packages = {
             default  = calistoPackage;
+            dev      = calistoDev;
             pkgbuild = pkgs.writeText "PKGBUILD"      pkgbuildText;
             specfile = pkgs.writeText "${pname}.spec"  specText;
           };
@@ -198,6 +223,11 @@ chmod 0755 %{buildroot}/usr/bin/%{name}
           apps.default = {
             type    = "app";
             program = "${calistoPackage}/bin/${pname}";
+          };
+
+          apps.dev = {
+            type    = "app";
+            program = "${calistoDev}/bin/${pname}-dev";
           };
 
           devShells.default = pkgs.mkShell {
