@@ -103,6 +103,19 @@ function Widgets.bar:new(cfg)
     local bar = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, gap)
     bar:set_valign(Gtk.Align.CENTER)
 
+    -- Parse padding: {top, bottom, left, right} or individual values
+    local padding = cfg.padding or { 0, 0, 0, 0 }
+    local padding_top = padding[1] or 0
+    local padding_bottom = padding[2] or 0
+    local padding_left = padding[3] or 0
+    local padding_right = padding[4] or 0
+
+    -- Apply margin to bar for padding effect
+    bar:set_margin_top(padding_top)
+    bar:set_margin_bottom(padding_bottom)
+    bar:set_margin_start(padding_left)
+    bar:set_margin_end(padding_right)
+
     -- Always apply theme to ensure colors are updated
     UI:apply_theme(cfg.opacity, cfg.font, cfg.font_size, cfg.widget_height)
 
@@ -128,12 +141,100 @@ function Widgets.button:new(cfg)
     return btn
 end
 
+Widgets.image_button = {}
+function Widgets.image_button:new(cfg)
+    local image_path = cfg.image or ""
+
+    -- Resolve @res/ prefix to ~/.alatar/res/
+    if image_path:match("^@res/") then
+        local home = os.getenv("HOME") or ""
+        image_path = home .. "/.alatar/res/" .. image_path:sub(6)
+    end
+
+    -- Create button
+    local btn = Gtk.Button.new()
+
+    -- Fill available height like other widgets
+    btn:set_vexpand(true)
+    btn:set_valign(Gtk.Align.FILL)
+
+    -- Remove default margin
+    btn:set_margin_start(0)
+    btn:set_margin_end(0)
+    btn:set_margin_top(0)
+    btn:set_margin_bottom(0)
+
+    -- Create and set the image with scaling
+    -- If size is specified, use it; otherwise scale to widget_height for compact display
+    local size = cfg.size or (UI.widget_height or 28)
+    local img = Gtk.Image.new_from_file(image_path)
+    img:set_pixel_size(size)
+    btn:set_child(img)
+
+    btn.on_clicked = cfg.on_clicked or function()
+        print("Image button clicked")
+    end
+
+    -- Apply aggressive CSS to remove all padding and borders
+    -- Use negative margins to counteract bar padding
+    local button_css = string.format([[
+        button {
+            padding: 0;
+            margin: 0;
+            margin-top: -4px;
+            margin-bottom: -4px;
+            border: none;
+            border-width: 0;
+            border-radius: 0;
+            min-width: 0;
+            min-height: 0;
+            background: none;
+            background-image: none;
+            box-shadow: none;
+            outline: none;
+            outline-width: 0;
+        }
+        button:hover {
+            background: none;
+            background-image: none;
+            box-shadow: none;
+            border: none;
+        }
+        button:active {
+            background: none;
+            background-image: none;
+            box-shadow: none;
+            border: none;
+        }
+        button:focus {
+            outline: none;
+            box-shadow: none;
+        }
+        button image {
+            padding: 0;
+            margin: 0;
+        }
+    ]])
+    apply_css(btn, button_css)
+
+    -- Apply user CSS on top if provided
+    if cfg.css then
+        apply_css(btn, cfg.css)
+    end
+
+    return btn
+end
+
 Widgets.clock = {}
 function Widgets.clock:new(cfg)
     local clock = Gtk.Label.new(format_date(cfg.format))
     if not cfg.css then
         clock:set_margin_end(12)
     end
+
+    -- Fill height like buttons do
+    clock:set_vexpand(true)
+    clock:set_valign(Gtk.Align.FILL)
 
     GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, function()
         clock:set_text(format_date(cfg.format))
@@ -156,404 +257,428 @@ end
 
 Widgets.media = {}
 function Widgets.media:new(cfg)
-   local media_script = os.getenv("HOME") .. "/.alatar/scripts/media.sh"
-   local media_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
-   media_box:set_valign(Gtk.Align.CENTER)
-   media_box:set_spacing(0)
+    local media_script = os.getenv("HOME") .. "/.alatar/scripts/media.sh"
+    local media_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
+    media_box:set_vexpand(true)
+    media_box:set_valign(Gtk.Align.FILL)
+    media_box:set_spacing(0)
 
-   -- Create buttons with GTK icons
-   local prev_btn = Gtk.Button.new()
-   local prev_icon = Gtk.Image.new_from_icon_name("media-skip-backward-symbolic")
-   prev_btn:set_child(prev_icon)
+    -- Create buttons with GTK icons
+    local prev_btn = Gtk.Button.new()
+    local prev_icon = Gtk.Image.new_from_icon_name("media-skip-backward-symbolic")
+    prev_btn:set_child(prev_icon)
 
-   local toggle_btn = Gtk.Button.new()
-   local toggle_icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic")
-   toggle_btn:set_child(toggle_icon)
+    local toggle_btn = Gtk.Button.new()
+    local toggle_icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic")
+    toggle_btn:set_child(toggle_icon)
 
-   local next_btn = Gtk.Button.new()
-   local next_icon = Gtk.Image.new_from_icon_name("media-skip-forward-symbolic")
-   next_btn:set_child(next_icon)
+    local next_btn = Gtk.Button.new()
+    local next_icon = Gtk.Image.new_from_icon_name("media-skip-forward-symbolic")
+    next_btn:set_child(next_icon)
 
-   -- Create scrollable label container
-   local info_label = Gtk.Label.new("No track")
-   info_label:set_ellipsize(3) -- PANGO_ELLIPSIZE_END
-   info_label:set_max_width_chars(30)
-   info_label:set_xalign(0) -- Left align
+    -- Create scrollable label container
+    local info_label = Gtk.Label.new("No track")
+    info_label:set_ellipsize(3) -- PANGO_ELLIPSIZE_END
+    info_label:set_max_width_chars(30)
+    info_label:set_xalign(0) -- Left align
 
-   -- Wrap label in an event box for the pill styling
-   local label_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
-   label_box:append(info_label)
-   label_box:set_size_request(200, -1) -- Max width 200px
+    -- Wrap label in an event box for the pill styling
+    local label_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
+    label_box:append(info_label)
+    label_box:set_size_request(200, -1) -- Max width 200px
 
-   -- Apply CSS classes
-   prev_btn:add_css_class("media-pill-left")
-   toggle_btn:add_css_class("media-pill-middle")
-   next_btn:add_css_class("media-pill-middle")
-   label_box:add_css_class("media-pill-right")
+    -- Apply CSS classes
+    prev_btn:add_css_class("media-pill-left")
+    toggle_btn:add_css_class("media-pill-middle")
+    next_btn:add_css_class("media-pill-middle")
+    label_box:add_css_class("media-pill-right")
 
-   -- Apply themed CSS if provided in config
-   if cfg and cfg.css then
-      apply_css(media_box, cfg.css)
-   end
+    -- Apply themed CSS if provided in config
+    if cfg and cfg.css then
+        apply_css(media_box, cfg.css)
+    end
 
-   -- Button actions
-   prev_btn.on_clicked = function()
-      run_shell_command_async({media_script, "prev"}, function() end)
-   end
+    -- Button actions
+    prev_btn.on_clicked = function()
+        run_shell_command_async({ media_script, "prev" }, function() end)
+    end
 
-   toggle_btn.on_clicked = function()
-      run_shell_command_async({media_script, "toggle"}, function() end)
-   end
+    toggle_btn.on_clicked = function()
+        run_shell_command_async({ media_script, "toggle" }, function() end)
+    end
 
-   next_btn.on_clicked = function()
-      run_shell_command_async({media_script, "next"}, function() end)
-   end
+    next_btn.on_clicked = function()
+        run_shell_command_async({ media_script, "next" }, function() end)
+    end
 
-   -- Marquee scrolling state
-   local full_text = "No track"
-   local scroll_offset = 0
-   local scroll_timer = nil
+    -- Marquee scrolling state
+    local full_text = "No track"
+    local scroll_offset = 0
+    local scroll_timer = nil
 
-   -- Update function
-   local function update_media()
-      -- Get full status including class
-      run_shell_command_async({media_script, "status"}, function(output, err)
-         if not err and output then
-            local ok, data = pcall(Json.decode, output)
-            if ok then
-               -- Update icon based on playback state from class
-               if data.class then
-                  local state = nil
-                  for _, cls in ipairs(data.class) do
-                     if cls == "playing" then
-                        state = "playing"
-                        break
-                     elseif cls == "paused" then
-                        state = "paused"
-                        break
-                     end
-                  end
+    -- Update function
+    local function update_media()
+        -- Get full status including class
+        run_shell_command_async({ media_script, "status" }, function(output, err)
+            if not err and output then
+                local ok, data = pcall(Json.decode, output)
+                if ok then
+                    -- Update icon based on playback state from class
+                    if data.class then
+                        local state = nil
+                        for _, cls in ipairs(data.class) do
+                            if cls == "playing" then
+                                state = "playing"
+                                break
+                            elseif cls == "paused" then
+                                state = "paused"
+                                break
+                            end
+                        end
 
-                  if state == "playing" then
-                     toggle_icon:set_from_icon_name("media-playback-pause-symbolic")
-                  else
-                     toggle_icon:set_from_icon_name("media-playback-start-symbolic")
-                  end
-               end
+                        if state == "playing" then
+                            toggle_icon:set_from_icon_name("media-playback-pause-symbolic")
+                        else
+                            toggle_icon:set_from_icon_name("media-playback-start-symbolic")
+                        end
+                    end
+                end
             end
-         end
-      end)
+        end)
 
-      -- Get track info
-      run_shell_command_async({media_script, "track"}, function(output, err)
-         if not err and output then
-            local ok, data = pcall(Json.decode, output)
-            if ok and data.text then
-               -- Clean text: remove leading/trailing whitespace and non-printable chars
-               -- Remove common icon byte sequences (UTF-8 for Private Use Area)
-               full_text = data.text:gsub("[\239][\140-\191][\128-\191]", "")  -- Remove U+E000-U+EFFF range
-                                         :gsub("[\239][\184-\191][\128-\191]", "")  -- Remove U+F800-U+FFFF range
-                                         :gsub("^%s+", ""):gsub("%s+$", "")  -- Trim whitespace
-               if full_text == "" then
-                  full_text = "No track"
-               end
-               scroll_offset = 0
+        -- Get track info
+        run_shell_command_async({ media_script, "track" }, function(output, err)
+            if not err and output then
+                local ok, data = pcall(Json.decode, output)
+                if ok and data.text then
+                    -- Clean text: remove leading/trailing whitespace and non-printable chars
+                    -- Remove common icon byte sequences (UTF-8 for Private Use Area)
+                    full_text = data
+                        .text
+                        :gsub("[\239][\140-\191][\128-\191]", "") -- Remove U+E000-U+EFFF range
+                        :gsub("[\239][\184-\191][\128-\191]", "") -- Remove U+F800-U+FFFF range
+                        :gsub("^%s+", "")
+                        :gsub("%s+$", "") -- Trim whitespace
+                    if full_text == "" then
+                        full_text = "No track"
+                    end
+                    scroll_offset = 0
 
-               -- If text is too long, start scrolling
-               if #full_text > 30 then
-                  if scroll_timer then
-                     GLib.source_remove(scroll_timer)
-                  end
-                  scroll_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, function()
-                     scroll_offset = scroll_offset + 1
-                     if scroll_offset > #full_text then
-                        scroll_offset = 0
-                     end
-                     local visible_text = string.sub(full_text .. "   " .. full_text, scroll_offset + 1, scroll_offset + 30)
-                     info_label:set_text(visible_text)
-                     return true
-                  end)
-               else
-                  if scroll_timer then
-                     GLib.source_remove(scroll_timer)
-                     scroll_timer = nil
-                  end
-                  info_label:set_text(full_text)
-               end
+                    -- If text is too long, start scrolling
+                    if #full_text > 30 then
+                        if scroll_timer then
+                            GLib.source_remove(scroll_timer)
+                        end
+                        scroll_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, function()
+                            scroll_offset = scroll_offset + 1
+                            if scroll_offset > #full_text then
+                                scroll_offset = 0
+                            end
+                            local visible_text =
+                                string.sub(full_text .. "   " .. full_text, scroll_offset + 1, scroll_offset + 30)
+                            info_label:set_text(visible_text)
+                            return true
+                        end)
+                    else
+                        if scroll_timer then
+                            GLib.source_remove(scroll_timer)
+                            scroll_timer = nil
+                        end
+                        info_label:set_text(full_text)
+                    end
+                end
             end
-         end
-      end)
+        end)
 
-      return true -- Continue timer
-   end
+        return true -- Continue timer
+    end
 
-   -- Initial update and setup timer
-   update_media()
-   GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, update_media)
+    -- Initial update and setup timer
+    update_media()
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, update_media)
 
-   -- Add widgets to box
-   media_box:append(prev_btn)
-   media_box:append(toggle_btn)
-   media_box:append(next_btn)
-   media_box:append(label_box)
+    -- Add widgets to box
+    media_box:append(prev_btn)
+    media_box:append(toggle_btn)
+    media_box:append(next_btn)
+    media_box:append(label_box)
 
-   return media_box
+    return media_box
 end
 
 Widgets.window = {}
 function Widgets.window:new(cfg)
-   local window_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
-   window_box:set_valign(Gtk.Align.CENTER)
-   window_box:add_css_class("window-widget")
+    local window_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
+    window_box:set_vexpand(true)
+    window_box:set_valign(Gtk.Align.FILL)
+    window_box:add_css_class("window-widget")
 
-   -- Create scrollable label
-   local window_label = Gtk.Label.new("Desktop")
-   window_label:set_ellipsize(3) -- PANGO_ELLIPSIZE_END
-   window_label:set_max_width_chars(60)
-   window_label:set_xalign(0) -- Left align
+    -- Create scrollable label
+    local window_label = Gtk.Label.new("Desktop")
+    window_label:set_ellipsize(3) -- PANGO_ELLIPSIZE_END
+    window_label:set_max_width_chars(60)
+    window_label:set_xalign(0) -- Left align
 
-   window_box:append(window_label)
+    window_box:append(window_label)
 
-   -- Marquee scrolling state
-   local full_text = "Desktop"
-   local scroll_offset = 0
-   local scroll_timer = nil
+    -- Marquee scrolling state
+    local full_text = "Desktop"
+    local scroll_offset = 0
+    local scroll_timer = nil
 
-   local function update_window()
-      run_shell_command_async({"swaymsg", "-t", "get_tree"}, function(output, err)
-         if not err and output then
-            local ok, data = pcall(Json.decode, output)
-            if ok then
-               -- Find focused window recursively
-               local function find_focused(node)
-                  if node.focused and node.name then
-                     return node.name
-                  end
-                  if node.nodes then
-                     for _, child in ipairs(node.nodes) do
-                        local result = find_focused(child)
-                        if result then return result end
-                     end
-                  end
-                  if node.floating_nodes then
-                     for _, child in ipairs(node.floating_nodes) do
-                        local result = find_focused(child)
-                        if result then return result end
-                     end
-                  end
-                  return nil
-               end
+    local function update_window()
+        run_shell_command_async({ "swaymsg", "-t", "get_tree" }, function(output, err)
+            if not err and output then
+                local ok, data = pcall(Json.decode, output)
+                if ok then
+                    -- Find focused window recursively
+                    local function find_focused(node)
+                        if node.focused and node.name then
+                            return node.name
+                        end
+                        if node.nodes then
+                            for _, child in ipairs(node.nodes) do
+                                local result = find_focused(child)
+                                if result then
+                                    return result
+                                end
+                            end
+                        end
+                        if node.floating_nodes then
+                            for _, child in ipairs(node.floating_nodes) do
+                                local result = find_focused(child)
+                                if result then
+                                    return result
+                                end
+                            end
+                        end
+                        return nil
+                    end
 
-               local title = find_focused(data) or "Desktop"
-               full_text = title
-               scroll_offset = 0
+                    local title = find_focused(data) or "Desktop"
+                    full_text = title
+                    scroll_offset = 0
 
-               -- If text is too long, start scrolling
-               if #full_text > 60 then
-                  if scroll_timer then
-                     GLib.source_remove(scroll_timer)
-                  end
-                  scroll_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, function()
-                     scroll_offset = scroll_offset + 1
-                     if scroll_offset > #full_text then
-                        scroll_offset = 0
-                     end
-                     local visible_text = string.sub(full_text .. "   " .. full_text, scroll_offset + 1, scroll_offset + 60)
-                     window_label:set_text(visible_text)
-                     return true
-                  end)
-               else
-                  if scroll_timer then
-                     GLib.source_remove(scroll_timer)
-                     scroll_timer = nil
-                  end
-                  window_label:set_text(full_text)
-               end
+                    -- If text is too long, start scrolling
+                    if #full_text > 60 then
+                        if scroll_timer then
+                            GLib.source_remove(scroll_timer)
+                        end
+                        scroll_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, function()
+                            scroll_offset = scroll_offset + 1
+                            if scroll_offset > #full_text then
+                                scroll_offset = 0
+                            end
+                            local visible_text =
+                                string.sub(full_text .. "   " .. full_text, scroll_offset + 1, scroll_offset + 60)
+                            window_label:set_text(visible_text)
+                            return true
+                        end)
+                    else
+                        if scroll_timer then
+                            GLib.source_remove(scroll_timer)
+                            scroll_timer = nil
+                        end
+                        window_label:set_text(full_text)
+                    end
+                end
             end
-         end
-      end)
-   end
+        end)
+    end
 
-   -- Subscribe to window events
-   local function subscribe_window()
-      local cmd = {"sh", "-c", "stdbuf -oL swaymsg -m -t subscribe '[\"window\"]' | jq -c"}
-      local process = Gio.Subprocess.new(cmd, Gio.SubprocessFlags.STDOUT_PIPE + Gio.SubprocessFlags.STDERR_PIPE)
-      local stdout_stream = Gio.DataInputStream.new(process:get_stdout_pipe())
+    -- Subscribe to window events
+    local function subscribe_window()
+        local cmd = { "sh", "-c", "stdbuf -oL swaymsg -m -t subscribe '[\"window\"]' | jq -c" }
+        local process = Gio.Subprocess.new(cmd, Gio.SubprocessFlags.STDOUT_PIPE + Gio.SubprocessFlags.STDERR_PIPE)
+        local stdout_stream = Gio.DataInputStream.new(process:get_stdout_pipe())
 
-      local function restart_subscription(delay)
-         GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, function()
-            subscribe_window()
-            return false
-         end)
-      end
+        local function restart_subscription(delay)
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, function()
+                subscribe_window()
+                return false
+            end)
+        end
 
-      process:wait_async(nil, nil, function(source_object, res)
-         source_object:wait_finish(res)
-         restart_subscription(2000)
-      end)
+        process:wait_async(nil, nil, function(source_object, res)
+            source_object:wait_finish(res)
+            restart_subscription(2000)
+        end)
 
-      local cancellable = Gio.Cancellable.new()
+        local cancellable = Gio.Cancellable.new()
 
-      local function read_next_line()
-         stdout_stream:read_line_async(GLib.PRIORITY_DEFAULT, cancellable, function(source_object, res)
-            local line, _length, err = source_object:read_line_finish(res)
-            if line then
-               local ok, event = pcall(Json.decode, line)
-               if ok and (event.change == "focus" or event.change == "title" or event.change == "close") then
-                  update_window()
-               elseif not ok then
-                  print("ERROR: Failed to parse window event:", event)
-               end
-               read_next_line()
-            elseif err then
-               print("ERROR: Failed reading from swaymsg pipe:", err)
-            end
-         end)
-      end
-      read_next_line()
-   end
+        local function read_next_line()
+            stdout_stream:read_line_async(GLib.PRIORITY_DEFAULT, cancellable, function(source_object, res)
+                local line, _length, err = source_object:read_line_finish(res)
+                if line then
+                    local ok, event = pcall(Json.decode, line)
+                    if ok and (event.change == "focus" or event.change == "title" or event.change == "close") then
+                        update_window()
+                    elseif not ok then
+                        print("ERROR: Failed to parse window event:", event)
+                    end
+                    read_next_line()
+                elseif err then
+                    print("ERROR: Failed reading from swaymsg pipe:", err)
+                end
+            end)
+        end
+        read_next_line()
+    end
 
-   -- Initial update and subscribe
-   update_window()
-   subscribe_window()
+    -- Initial update and subscribe
+    update_window()
+    subscribe_window()
 
-   -- Apply CSS if provided
-   if cfg and cfg.css then
-      apply_css(window_box, cfg.css)
-   end
+    -- Apply CSS if provided
+    if cfg and cfg.css then
+        apply_css(window_box, cfg.css)
+    end
 
-   return window_box
+    return window_box
 end
 
 Widgets.audio = {}
 function Widgets.audio:new(cfg)
-   local audio_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 4)
-   audio_box:set_valign(Gtk.Align.CENTER)
-   audio_box:add_css_class("audio-widget")
+    local audio_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 4)
+    audio_box:set_vexpand(true)
+    audio_box:set_valign(Gtk.Align.FILL)
+    audio_box:add_css_class("audio-widget")
 
-   local volume_label = Gtk.Label.new("--% ")
-   audio_box:append(volume_label)
+    local volume_label = Gtk.Label.new("--% ")
+    audio_box:append(volume_label)
 
-   local function update_audio()
-      run_shell_command_async({"pactl", "get-sink-volume", "@DEFAULT_SINK@"}, function(output, err)
-         if not err and output then
-            -- Parse volume from pactl output: "Volume: front-left: 65536 /  100% / 0.00 dB"
-            local volume = output:match("(%d+)%%")
-            if volume then
-               -- Get mute status
-               run_shell_command_async({"pactl", "get-sink-mute", "@DEFAULT_SINK@"}, function(mute_output, mute_err)
-                  if not mute_err and mute_output then
-                     local is_muted = mute_output:match("yes")
-                     if is_muted then
-                        volume_label:set_text("mute ")
-                     else
-                        local icon = ""
-                        local vol_num = tonumber(volume)
-                        if vol_num <= 33 then
-                           icon = ""
-                        elseif vol_num <= 66 then
-                           icon = ""
-                        else
-                           icon = ""
+    local function update_audio()
+        run_shell_command_async({ "pactl", "get-sink-volume", "@DEFAULT_SINK@" }, function(output, err)
+            if not err and output then
+                -- Parse volume from pactl output: "Volume: front-left: 65536 /  100% / 0.00 dB"
+                local volume = output:match("(%d+)%%")
+                if volume then
+                    -- Get mute status
+                    run_shell_command_async(
+                        { "pactl", "get-sink-mute", "@DEFAULT_SINK@" },
+                        function(mute_output, mute_err)
+                            if not mute_err and mute_output then
+                                local is_muted = mute_output:match("yes")
+                                if is_muted then
+                                    volume_label:set_text("mute ")
+                                else
+                                    local icon = ""
+                                    local vol_num = tonumber(volume)
+                                    if vol_num <= 33 then
+                                        icon = ""
+                                    elseif vol_num <= 66 then
+                                        icon = ""
+                                    else
+                                        icon = ""
+                                    end
+                                    volume_label:set_text(string.format("%3s%% %s", volume, icon))
+                                end
+                            end
                         end
-                        volume_label:set_text(string.format("%3s%% %s", volume, icon))
-                     end
-                  end
-               end)
+                    )
+                end
             end
-         end
-      end)
-      return true
-   end
+        end)
+        return true
+    end
 
-   -- Update every 2 seconds
-   update_audio()
-   GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, update_audio)
+    -- Update every 2 seconds
+    update_audio()
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, update_audio)
 
-   -- Apply CSS if provided
-   if cfg and cfg.css then
-      apply_css(audio_box, cfg.css)
-   end
+    -- Apply CSS if provided
+    if cfg and cfg.css then
+        apply_css(audio_box, cfg.css)
+    end
 
-   return audio_box
+    return audio_box
 end
 
 Widgets.network = {}
 function Widgets.network:new(cfg)
-   local network_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 4)
-   network_box:set_valign(Gtk.Align.CENTER)
-   network_box:add_css_class("network-widget")
+    local network_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 4)
+    network_box:set_vexpand(true)
+    network_box:set_valign(Gtk.Align.FILL)
+    network_box:add_css_class("network-widget")
 
-   local network_label = Gtk.Label.new("offline")
-   network_box:append(network_label)
+    local network_label = Gtk.Label.new("offline")
+    network_box:append(network_label)
 
-   local function update_network()
-      run_shell_command_async({"nmcli", "-t", "-f", "TYPE,STATE,NAME", "connection", "show", "--active"}, function(output, err)
-         if not err and output then
-            local lines = {}
-            for line in output:gmatch("[^\r\n]+") do
-               table.insert(lines, line)
-            end
+    local function update_network()
+        run_shell_command_async(
+            { "nmcli", "-t", "-f", "TYPE,STATE,NAME", "connection", "show", "--active" },
+            function(output, err)
+                if not err and output then
+                    local lines = {}
+                    for line in output:gmatch("[^\r\n]+") do
+                        table.insert(lines, line)
+                    end
 
-            if #lines > 0 then
-               -- Parse first active connection: TYPE:STATE:NAME
-               local parts = {}
-               for part in lines[1]:gmatch("[^:]+") do
-                  table.insert(parts, part)
-               end
-
-               if #parts >= 3 then
-                  local conn_type = parts[1]
-                  local conn_name = parts[3]
-
-                  if conn_type == "802-11-wireless" or conn_type == "wifi" then
-                     -- Get signal strength for wifi - get the first line which is the active connection
-                     run_shell_command_async({"sh", "-c", "nmcli -t -f IN-USE,SIGNAL device wifi list --rescan no | grep '^\\*' | cut -d: -f2"}, function(signal_output, signal_err)
-                        if not signal_err and signal_output then
-                           local signal = signal_output:match("(%d+)")
-                           if signal then
-                              network_label:set_text(string.format("%s (%s%%) ", conn_name, signal))
-                           else
-                              network_label:set_text(conn_name .. " ")
-                           end
-                        else
-                           network_label:set_text(conn_name .. " ")
+                    if #lines > 0 then
+                        -- Parse first active connection: TYPE:STATE:NAME
+                        local parts = {}
+                        for part in lines[1]:gmatch("[^:]+") do
+                            table.insert(parts, part)
                         end
-                     end)
-                  else
-                     -- Ethernet or other
-                     network_label:set_text(conn_name .. " ")
-                  end
-               else
-                  network_label:set_text("online")
-               end
-            else
-               network_label:set_text("offline")
+
+                        if #parts >= 3 then
+                            local conn_type = parts[1]
+                            local conn_name = parts[3]
+
+                            if conn_type == "802-11-wireless" or conn_type == "wifi" then
+                                -- Get signal strength for wifi - get the first line which is the active connection
+                                run_shell_command_async({
+                                    "sh",
+                                    "-c",
+                                    "nmcli -t -f IN-USE,SIGNAL device wifi list --rescan no | grep '^\\*' | cut -d: -f2",
+                                }, function(signal_output, signal_err)
+                                    if not signal_err and signal_output then
+                                        local signal = signal_output:match("(%d+)")
+                                        if signal then
+                                            network_label:set_text(string.format("%s (%s%%) ", conn_name, signal))
+                                        else
+                                            network_label:set_text(conn_name .. " ")
+                                        end
+                                    else
+                                        network_label:set_text(conn_name .. " ")
+                                    end
+                                end)
+                            else
+                                -- Ethernet or other
+                                network_label:set_text(conn_name .. " ")
+                            end
+                        else
+                            network_label:set_text("online")
+                        end
+                    else
+                        network_label:set_text("offline")
+                    end
+                else
+                    network_label:set_text("offline")
+                end
             end
-         else
-            network_label:set_text("offline")
-         end
-      end)
-      return true
-   end
+        )
+        return true
+    end
 
-   -- Update every 3 seconds
-   update_network()
-   GLib.timeout_add(GLib.PRIORITY_DEFAULT, 3000, update_network)
+    -- Update every 3 seconds
+    update_network()
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 3000, update_network)
 
-   -- Apply CSS if provided
-   if cfg and cfg.css then
-      apply_css(network_box, cfg.css)
-   end
+    -- Apply CSS if provided
+    if cfg and cfg.css then
+        apply_css(network_box, cfg.css)
+    end
 
-   return network_box
+    return network_box
 end
 
 Widgets.workspaces = {}
 function Widgets.workspaces:new(cfg)
     local gap = (cfg and cfg.gap) or 2
     local workspace_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
-    workspace_box:set_valign(Gtk.Align.CENTER)
+    workspace_box:set_vexpand(true)
+    workspace_box:set_valign(Gtk.Align.FILL)
     workspace_box:set_spacing(gap) -- Configurable spacing between workspace buttons
 
     -- get_sway_workspaces now takes a callback

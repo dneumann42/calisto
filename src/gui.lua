@@ -131,6 +131,7 @@ local bar = Widgets.bar:new {
    font = "monospace",    -- Font family (e.g., "monospace", "sans-serif", "JetBrains Mono")
    font_size = 10,        -- Font size in points
    widget_height = 28,    -- Widget height in pixels
+   padding = {0, 0, 0, 0}, -- Bar padding: {top, bottom, left, right} in pixels
    gap = 4,               -- Gap between widgets in pixels
    widgets = {
       Widgets.button:new {
@@ -217,6 +218,73 @@ end
 
 create_default_styles_config()
 
+-- Execute a command with arguments
+-- Takes a table where first element is the command and rest are arguments
+-- Returns stdout on success, or prints error and returns nil on failure
+local function exec(cmd_table)
+   if type(cmd_table) ~= "table" or #cmd_table == 0 then
+      print("ERROR: exec() requires a non-empty table")
+      return nil
+   end
+
+   -- Build the command with properly escaped arguments
+   -- Don't quote the command itself (first arg) to allow PATH lookup
+   local parts = { tostring(cmd_table[1]) }
+   for i = 2, #cmd_table do
+      -- Use %q to properly escape arguments for shell
+      parts[i] = string.format("%q", tostring(cmd_table[i]))
+   end
+   local cmd = table.concat(parts, " ")
+
+   -- Execute and capture output
+   local handle = io.popen(cmd .. " 2>&1")
+   if not handle then
+      print("ERROR: Failed to execute command:", cmd_table[1])
+      return nil
+   end
+
+   local output = handle:read("*a")
+   local success, _, exit_code = handle:close()
+
+   if success then
+      return output
+   else
+      print("ERROR: Command failed with exit code " .. tostring(exit_code) .. ":", cmd_table[1])
+      print("Output:", output)
+      return nil
+   end
+end
+
+-- Execute a command in the background (disowned)
+-- Takes a table where first element is the command and rest are arguments
+-- Returns true on successful launch, or prints error and returns nil on failure
+local function exec_disown(cmd_table)
+   if type(cmd_table) ~= "table" or #cmd_table == 0 then
+      print("ERROR: exec_disown() requires a non-empty table")
+      return nil
+   end
+
+   -- Build the command with properly escaped arguments
+   -- Don't quote the command itself (first arg) to allow PATH lookup
+   local parts = { tostring(cmd_table[1]) }
+   for i = 2, #cmd_table do
+      -- Use %q to properly escape arguments for shell
+      parts[i] = string.format("%q", tostring(cmd_table[i]))
+   end
+   local cmd = table.concat(parts, " ")
+
+   -- Run in background, disowned, with output redirected
+   local full_cmd = string.format("(%s &) > /dev/null 2>&1", cmd)
+   local success = os.execute(full_cmd)
+
+   if success then
+      return true
+   else
+      print("ERROR: Failed to launch command:", cmd_table[1])
+      return nil
+   end
+end
+
 -- Load bar.lua with provided environment
 local function load_bar_config()
    local f = io.open(bar_config_path, "r")
@@ -233,6 +301,8 @@ local function load_bar_config()
       UI = UI,
       Theme = Theme,
       css = css,
+      exec = exec,
+      exec_disown = exec_disown,
       -- Include standard library functions
       print = print,
       pairs = pairs,
