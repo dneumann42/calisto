@@ -185,8 +185,11 @@ function UI:apply_theme(opacity, font, font_size)
    local themed_core_app_css = replace_colors(core_app_css)
    local themed_workspaces_css = Theme and Theme.Workspaces and replace_colors(Theme.Workspaces) or ""
    local themed_media_css = Theme and Theme.Media and replace_colors(Theme.Media) or ""
+   local themed_window_css = Theme and Theme.Window and replace_colors(Theme.Window) or ""
+   local themed_audio_css = Theme and Theme.Audio and replace_colors(Theme.Audio) or ""
+   local themed_network_css = Theme and Theme.Network and replace_colors(Theme.Network) or ""
 
-   local css = win_css .. themed_core_app_css .. themed_workspaces_css .. themed_media_css
+   local css = win_css .. themed_core_app_css .. themed_workspaces_css .. themed_media_css .. themed_window_css .. themed_audio_css .. themed_network_css
 
    -- swap provider so repeated import() calls don't accumulate them
    local display = Gdk.Display.get_default()

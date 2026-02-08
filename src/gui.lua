@@ -126,9 +126,18 @@ local bar = Widgets.bar:new {
          css = css(Theme.Workspaces),
          gap = 2,  -- Gap between workspace buttons in pixels
       },
+      -- Widgets.window:new {  -- Uncomment to show current window title
+      --    css = css(Theme.Window),
+      -- },
       Widgets.hspacer:new(),
       -- Widgets.media:new {  -- Uncomment to add media controls
       --    css = css(Theme.Media),
+      -- },
+      -- Widgets.audio:new {  -- Uncomment to show audio volume
+      --    css = css(Theme.Audio),
+      -- },
+      -- Widgets.network:new {  -- Uncomment to show network status
+      --    css = css(Theme.Network),
       -- },
       Widgets.clock:new {
          css = css(Theme.Clock),

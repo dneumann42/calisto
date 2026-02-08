@@ -300,6 +300,255 @@ function Widgets.media:new(cfg)
    return media_box
 end
 
+Widgets.window = {}
+function Widgets.window:new(cfg)
+   local window_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
+   window_box:set_valign(Gtk.Align.CENTER)
+   window_box:add_css_class("window-widget")
+
+   -- Create scrollable label
+   local window_label = Gtk.Label.new("Desktop")
+   window_label:set_ellipsize(3) -- PANGO_ELLIPSIZE_END
+   window_label:set_max_width_chars(60)
+   window_label:set_xalign(0) -- Left align
+
+   window_box:append(window_label)
+
+   -- Marquee scrolling state
+   local full_text = "Desktop"
+   local scroll_offset = 0
+   local scroll_timer = nil
+
+   local function update_window()
+      run_shell_command_async({"swaymsg", "-t", "get_tree"}, function(output, err)
+         if not err and output then
+            local ok, data = pcall(Json.decode, output)
+            if ok then
+               -- Find focused window recursively
+               local function find_focused(node)
+                  if node.focused and node.name then
+                     return node.name
+                  end
+                  if node.nodes then
+                     for _, child in ipairs(node.nodes) do
+                        local result = find_focused(child)
+                        if result then return result end
+                     end
+                  end
+                  if node.floating_nodes then
+                     for _, child in ipairs(node.floating_nodes) do
+                        local result = find_focused(child)
+                        if result then return result end
+                     end
+                  end
+                  return nil
+               end
+
+               local title = find_focused(data) or "Desktop"
+               full_text = title
+               scroll_offset = 0
+
+               -- If text is too long, start scrolling
+               if #full_text > 60 then
+                  if scroll_timer then
+                     GLib.source_remove(scroll_timer)
+                  end
+                  scroll_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, function()
+                     scroll_offset = scroll_offset + 1
+                     if scroll_offset > #full_text then
+                        scroll_offset = 0
+                     end
+                     local visible_text = string.sub(full_text .. "   " .. full_text, scroll_offset + 1, scroll_offset + 60)
+                     window_label:set_text(visible_text)
+                     return true
+                  end)
+               else
+                  if scroll_timer then
+                     GLib.source_remove(scroll_timer)
+                     scroll_timer = nil
+                  end
+                  window_label:set_text(full_text)
+               end
+            end
+         end
+      end)
+   end
+
+   -- Subscribe to window events
+   local function subscribe_window()
+      local cmd = {"sh", "-c", "stdbuf -oL swaymsg -m -t subscribe '[\"window\"]' | jq -c"}
+      local process = Gio.Subprocess.new(cmd, Gio.SubprocessFlags.STDOUT_PIPE + Gio.SubprocessFlags.STDERR_PIPE)
+      local stdout_stream = Gio.DataInputStream.new(process:get_stdout_pipe())
+
+      local function restart_subscription(delay)
+         GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, function()
+            subscribe_window()
+            return false
+         end)
+      end
+
+      process:wait_async(nil, nil, function(source_object, res)
+         source_object:wait_finish(res)
+         restart_subscription(2000)
+      end)
+
+      local cancellable = Gio.Cancellable.new()
+
+      local function read_next_line()
+         stdout_stream:read_line_async(GLib.PRIORITY_DEFAULT, cancellable, function(source_object, res)
+            local line, _length, err = source_object:read_line_finish(res)
+            if line then
+               local ok, event = pcall(Json.decode, line)
+               if ok and (event.change == "focus" or event.change == "title" or event.change == "close") then
+                  update_window()
+               elseif not ok then
+                  print("ERROR: Failed to parse window event:", event)
+               end
+               read_next_line()
+            elseif err then
+               print("ERROR: Failed reading from swaymsg pipe:", err)
+            end
+         end)
+      end
+      read_next_line()
+   end
+
+   -- Initial update and subscribe
+   update_window()
+   subscribe_window()
+
+   -- Apply CSS if provided
+   if cfg and cfg.css then
+      apply_css(window_box, cfg.css)
+   end
+
+   return window_box
+end
+
+Widgets.audio = {}
+function Widgets.audio:new(cfg)
+   local audio_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 4)
+   audio_box:set_valign(Gtk.Align.CENTER)
+   audio_box:add_css_class("audio-widget")
+
+   local volume_label = Gtk.Label.new("--% ")
+   audio_box:append(volume_label)
+
+   local function update_audio()
+      run_shell_command_async({"pactl", "get-sink-volume", "@DEFAULT_SINK@"}, function(output, err)
+         if not err and output then
+            -- Parse volume from pactl output: "Volume: front-left: 65536 /  100% / 0.00 dB"
+            local volume = output:match("(%d+)%%")
+            if volume then
+               -- Get mute status
+               run_shell_command_async({"pactl", "get-sink-mute", "@DEFAULT_SINK@"}, function(mute_output, mute_err)
+                  if not mute_err and mute_output then
+                     local is_muted = mute_output:match("yes")
+                     if is_muted then
+                        volume_label:set_text("mute ")
+                     else
+                        local icon = ""
+                        local vol_num = tonumber(volume)
+                        if vol_num <= 33 then
+                           icon = ""
+                        elseif vol_num <= 66 then
+                           icon = ""
+                        else
+                           icon = ""
+                        end
+                        volume_label:set_text(string.format("%3s%% %s", volume, icon))
+                     end
+                  end
+               end)
+            end
+         end
+      end)
+      return true
+   end
+
+   -- Update every 2 seconds
+   update_audio()
+   GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, update_audio)
+
+   -- Apply CSS if provided
+   if cfg and cfg.css then
+      apply_css(audio_box, cfg.css)
+   end
+
+   return audio_box
+end
+
+Widgets.network = {}
+function Widgets.network:new(cfg)
+   local network_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 4)
+   network_box:set_valign(Gtk.Align.CENTER)
+   network_box:add_css_class("network-widget")
+
+   local network_label = Gtk.Label.new("offline")
+   network_box:append(network_label)
+
+   local function update_network()
+      run_shell_command_async({"nmcli", "-t", "-f", "TYPE,STATE,NAME", "connection", "show", "--active"}, function(output, err)
+         if not err and output then
+            local lines = {}
+            for line in output:gmatch("[^\r\n]+") do
+               table.insert(lines, line)
+            end
+
+            if #lines > 0 then
+               -- Parse first active connection: TYPE:STATE:NAME
+               local parts = {}
+               for part in lines[1]:gmatch("[^:]+") do
+                  table.insert(parts, part)
+               end
+
+               if #parts >= 3 then
+                  local conn_type = parts[1]
+                  local conn_name = parts[3]
+
+                  if conn_type == "802-11-wireless" or conn_type == "wifi" then
+                     -- Get signal strength for wifi - get the first line which is the active connection
+                     run_shell_command_async({"sh", "-c", "nmcli -t -f IN-USE,SIGNAL device wifi list --rescan no | grep '^\\*' | cut -d: -f2"}, function(signal_output, signal_err)
+                        if not signal_err and signal_output then
+                           local signal = signal_output:match("(%d+)")
+                           if signal then
+                              network_label:set_text(string.format("%s (%s%%) ", conn_name, signal))
+                           else
+                              network_label:set_text(conn_name .. " ")
+                           end
+                        else
+                           network_label:set_text(conn_name .. " ")
+                        end
+                     end)
+                  else
+                     -- Ethernet or other
+                     network_label:set_text(conn_name .. " ")
+                  end
+               else
+                  network_label:set_text("online")
+               end
+            else
+               network_label:set_text("offline")
+            end
+         else
+            network_label:set_text("offline")
+         end
+      end)
+      return true
+   end
+
+   -- Update every 3 seconds
+   update_network()
+   GLib.timeout_add(GLib.PRIORITY_DEFAULT, 3000, update_network)
+
+   -- Apply CSS if provided
+   if cfg and cfg.css then
+      apply_css(network_box, cfg.css)
+   end
+
+   return network_box
+end
+
 Widgets.workspaces = {}
 function Widgets.workspaces:new(cfg)
     local gap = (cfg and cfg.gap) or 2

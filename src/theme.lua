@@ -119,4 +119,49 @@ return {
      border-left-color: {success};
   }
   ]],
+    Window = [[
+  .window-widget {
+     background-image: linear-gradient(135deg, {info}, {surface});
+     color: {fg};
+     border-style: solid;
+     border-width: 2px;
+     border-top-color: {info};
+     border-left-color: {info};
+     border-bottom-color: {bg};
+     border-right-color: {bg};
+     border-radius: 0px;
+     padding: 0px 8px;
+     margin: 0px 2px;
+  }
+  ]],
+    Audio = [[
+  .audio-widget {
+     background-image: linear-gradient(135deg, {warning}, {surface});
+     color: {fg};
+     border-style: solid;
+     border-width: 2px;
+     border-top-color: {warning};
+     border-left-color: {warning};
+     border-bottom-color: {bg};
+     border-right-color: {bg};
+     border-radius: 0px;
+     padding: 0px 8px;
+     margin: 0px 2px;
+  }
+  ]],
+    Network = [[
+  .network-widget {
+     background-image: linear-gradient(135deg, {accent}, {surface});
+     color: {fg};
+     border-style: solid;
+     border-width: 2px;
+     border-top-color: {accent};
+     border-left-color: {accent};
+     border-bottom-color: {bg};
+     border-right-color: {bg};
+     border-radius: 0px;
+     padding: 0px 8px;
+     margin: 0px 2px;
+  }
+  ]],
 }
