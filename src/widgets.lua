@@ -1047,17 +1047,20 @@ function Widgets.systray:new(cfg)
     end
 
     local function update_tray_items()
-        -- Query registered items
+        -- Discover StatusNotifierItem services by scanning all DBus services
+        -- This works around snixembed not updating RegisteredStatusNotifierItems
         run_shell_command_async({
             "sh",
             "-c",
-            "busctl --user get-property org.kde.StatusNotifierWatcher /StatusNotifierWatcher org.kde.StatusNotifierWatcher RegisteredStatusNotifierItems 2>/dev/null",
+            "busctl --user list --no-pager --no-legend | awk '{print $1}' | while read service; do busctl --user tree \"$service\" 2>/dev/null | grep -q '/StatusNotifierItem' && echo \"$service\"; done",
         }, function(output, err)
             if not err and output then
                 local current_services = {}
-                for service in output:gmatch('"([^"]+)"') do
-                    current_services[service] = true
-                    add_tray_item(service)
+                for service in output:gmatch("([^\n]+)") do
+                    if service ~= "" then
+                        current_services[service] = true
+                        add_tray_item(service)
+                    end
                 end
 
                 -- Remove items that no longer exist
