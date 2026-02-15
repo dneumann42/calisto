@@ -6,6 +6,7 @@ local Widgets = {}
 local Json = require("json")
 local UI = require("ui")
 local pp = require("pprint")
+local SwayIPC = import("sway_ipc")
 
 -- Asynchronous command runner using Gio.Subprocess
 local function run_shell_command_async(command_args, callback)
@@ -144,85 +145,139 @@ end
 Widgets.image_button = {}
 function Widgets.image_button:new(cfg)
     local image_path = cfg.image or ""
+    local icon_name = cfg.icon
 
     -- Resolve @res/ prefix to ~/.alatar/res/
-    if image_path:match("^@res/") then
+    if image_path ~= "" and image_path:match("^@res/") then
         local home = os.getenv("HOME") or ""
         image_path = home .. "/.alatar/res/" .. image_path:sub(6)
     end
 
-    -- Create button
-    local btn = Gtk.Button.new()
+    -- Create a box instead of button for full control over padding
+    local box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
 
-    -- Fill available height like other widgets
-    btn:set_vexpand(true)
-    btn:set_valign(Gtk.Align.FILL)
-
-    -- Remove default margin
-    btn:set_margin_start(0)
-    btn:set_margin_end(0)
-    btn:set_margin_top(0)
-    btn:set_margin_bottom(0)
-
-    -- Create and set the image with scaling
-    -- If size is specified, use it; otherwise scale to widget_height for compact display
-    local size = cfg.size or (UI.widget_height or 28)
-    local img = Gtk.Image.new_from_file(image_path)
-    img:set_pixel_size(size)
-    btn:set_child(img)
-
-    btn.on_clicked = cfg.on_clicked or function()
-        print("Image button clicked")
+    -- Only fill height if no custom size specified
+    if not cfg.size then
+        box:set_vexpand(true)
+        box:set_valign(Gtk.Align.FILL)
+    else
+        -- Let the box size naturally to the image
+        box:set_valign(Gtk.Align.CENTER)
     end
 
-    -- Apply aggressive CSS to remove all padding and borders
-    -- Use negative margins to counteract bar padding
-    local button_css = string.format([[
-        button {
+    -- Create and set the image with scaling
+    local size = cfg.size or (UI.widget_height or 28)
+    print(
+        string.format(
+            "[image_button] Image: %s, Size: %d, Pixelated: %s",
+            image_path,
+            size,
+            tostring(cfg.pixelated or cfg.nearest_neighbor)
+        )
+    )
+
+    local img
+
+    if icon_name then
+        -- Use GTK icon name
+        img = Gtk.Image.new_from_icon_name(icon_name)
+        if cfg.size then
+            img:set_pixel_size(cfg.size)
+        end
+    elseif cfg.pixelated or cfg.nearest_neighbor then
+        -- Load with GdkPixbuf for nearest neighbor scaling
+        local GdkPixbuf = lgi.require("GdkPixbuf", "2.0")
+        local Gdk = lgi.require("Gdk", "4.0")
+        local pixbuf = GdkPixbuf.Pixbuf.new_from_file(image_path)
+
+        -- Get original dimensions
+        local orig_width = pixbuf:get_width()
+        local orig_height = pixbuf:get_height()
+
+        -- Scale maintaining aspect ratio
+        local scale_factor = size / math.max(orig_width, orig_height)
+        local new_width = math.floor(orig_width * scale_factor)
+        local new_height = math.floor(orig_height * scale_factor)
+
+        print(
+            string.format(
+                "[image_button] Original: %dx%d, Scaled: %dx%d",
+                orig_width,
+                orig_height,
+                new_width,
+                new_height
+            )
+        )
+
+        -- Scale with nearest neighbor (INTERP_NEAREST = 0)
+        local scaled = pixbuf:scale_simple(new_width, new_height, 0)
+
+        -- Use Gtk.Picture for proper sizing in GTK4
+        local texture = Gdk.Texture.new_for_pixbuf(scaled)
+        img = Gtk.Picture.new_for_paintable(texture)
+        img:set_can_shrink(false)
+        img:set_content_fit(Gtk.ContentFit.FILL)
+
+        -- Set explicit size
+        img:set_size_request(new_width, new_height)
+        img:set_halign(Gtk.Align.CENTER)
+        img:set_valign(Gtk.Align.CENTER)
+
+        -- Set explicit size on box to match image
+        box:set_size_request(new_width, new_height)
+    else
+        -- Use default smooth scaling
+        img = Gtk.Image.new_from_file(image_path)
+        img:set_pixel_size(size)
+    end
+
+    box:append(img)
+
+    -- Add click gesture to make it act like a button
+    local Gtk4 = lgi.require("Gtk", "4.0")
+    local click = Gtk4.GestureClick.new()
+    click.on_released = function(gesture, n_press, x, y)
+        if cfg.on_clicked then
+            cfg.on_clicked()
+        else
+            print("Image button clicked")
+        end
+    end
+    box:add_controller(click)
+
+    -- Apply CSS with zero padding and optional nearest neighbor interpolation
+    local interpolation = ""
+    if cfg.pixelated or cfg.nearest_neighbor then
+        interpolation = [[
+            -gtk-icon-filter: none;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        ]]
+    end
+
+    local box_css = string.format(
+        [[
+        box {
             padding: 0;
             margin: 0;
-            margin-top: -4px;
-            margin-bottom: -4px;
-            border: none;
-            border-width: 0;
-            border-radius: 0;
-            min-width: 0;
-            min-height: 0;
             background: none;
-            background-image: none;
-            box-shadow: none;
-            outline: none;
-            outline-width: 0;
         }
-        button:hover {
-            background: none;
-            background-image: none;
-            box-shadow: none;
-            border: none;
-        }
-        button:active {
-            background: none;
-            background-image: none;
-            box-shadow: none;
-            border: none;
-        }
-        button:focus {
-            outline: none;
-            box-shadow: none;
-        }
-        button image {
+        box image {
             padding: 0;
             margin: 0;
+            %s
         }
-    ]])
-    apply_css(btn, button_css)
+    ]],
+        interpolation
+    )
+    apply_css(box, box_css)
 
     -- Apply user CSS on top if provided
     if cfg.css then
-        apply_css(btn, cfg.css)
+        apply_css(box, cfg.css)
     end
 
-    return btn
+    return box
 end
 
 Widgets.clock = {}
@@ -249,19 +304,80 @@ end
 
 Widgets.hspacer = {}
 function Widgets.hspacer:new(cfg)
+    cfg = cfg or {}
     local spacer = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
-    spacer:set_hexpand(true)
-    apply_css(spacer, (cfg or {}).css or "")
+
+    if cfg.width then
+        -- Fixed width spacer
+        spacer:set_size_request(cfg.width, -1)
+        spacer:set_hexpand(false)
+    else
+        -- Expandable spacer (default)
+        spacer:set_hexpand(true)
+    end
+
+    apply_css(spacer, cfg.css or "")
     return spacer
 end
 
 Widgets.media = {}
 function Widgets.media:new(cfg)
+    cfg = cfg or {}
     local media_script = os.getenv("HOME") .. "/.alatar/scripts/media.sh"
     local media_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
     media_box:set_vexpand(true)
     media_box:set_valign(Gtk.Align.FILL)
     media_box:set_spacing(0)
+
+    -- Set fixed width if specified
+    if cfg.width then
+        media_box:set_size_request(cfg.width, -1)
+        media_box:set_hexpand(false)
+    end
+
+    -- UTF-8 aware string functions
+    local function utf8_chars(str)
+        local chars = {}
+        local i = 1
+        while i <= #str do
+            local byte = string.byte(str, i)
+            local char_len = 1
+            if byte >= 0xF0 then
+                char_len = 4
+            elseif byte >= 0xE0 then
+                char_len = 3
+            elseif byte >= 0xC0 then
+                char_len = 2
+            end
+            table.insert(chars, string.sub(str, i, i + char_len - 1))
+            i = i + char_len
+        end
+        return chars
+    end
+
+    local function utf8_sub(str, start_char, end_char)
+        local chars = utf8_chars(str)
+        local result = {}
+        for i = start_char, math.min(end_char, #chars) do
+            table.insert(result, chars[i])
+        end
+        return table.concat(result)
+    end
+
+    local function utf8_len(str)
+        return #utf8_chars(str)
+    end
+
+    -- Create album art image - use bar height if available
+    local GdkPixbuf = lgi.require("GdkPixbuf", "2.0")
+    local Gdk = lgi.require("Gdk", "4.0")
+    local art_size = cfg.art_size or UI.widget_height or 32
+    local album_art = Gtk.Picture.new()
+    album_art:set_can_shrink(false)
+    album_art:set_content_fit(Gtk.ContentFit.FILL)
+    album_art:set_size_request(art_size, art_size)
+    album_art:set_halign(Gtk.Align.CENTER)
+    album_art:set_valign(Gtk.Align.CENTER)
 
     -- Create buttons with GTK icons
     local prev_btn = Gtk.Button.new()
@@ -276,18 +392,25 @@ function Widgets.media:new(cfg)
     local next_icon = Gtk.Image.new_from_icon_name("media-skip-forward-symbolic")
     next_btn:set_child(next_icon)
 
-    -- Create scrollable label container
+    -- Calculate fixed width for label to prevent unicode symbol width changes
+    local widget_width = cfg.width or 400
+    local buttons_width = 120 -- approximate width of 3 buttons
+    local art_width = (cfg.show_art ~= false) and art_size or 0
+    local label_width = widget_width - buttons_width - art_width - 20 -- 20px margin
+
+    -- Create scrollable label container with fixed width
     local info_label = Gtk.Label.new("No track")
-    info_label:set_ellipsize(3) -- PANGO_ELLIPSIZE_END
-    info_label:set_max_width_chars(30)
+    info_label:set_ellipsize(0) -- PANGO_ELLIPSIZE_NONE - don't ellipsize, we handle scrolling
     info_label:set_xalign(0) -- Left align
 
-    -- Wrap label in an event box for the pill styling
+    -- Wrap label in a box with fixed width to prevent resizing
     local label_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
     label_box:append(info_label)
-    label_box:set_size_request(200, -1) -- Max width 200px
+    label_box:set_size_request(label_width, -1)
+    label_box:set_hexpand(false)
 
     -- Apply CSS classes
+    media_box:add_css_class("media-widget")
     prev_btn:add_css_class("media-pill-left")
     toggle_btn:add_css_class("media-pill-middle")
     next_btn:add_css_class("media-pill-middle")
@@ -313,8 +436,68 @@ function Widgets.media:new(cfg)
 
     -- Marquee scrolling state
     local full_text = "No track"
+    local previous_text = "No track"
     local scroll_offset = 0
     local scroll_timer = nil
+    local current_art_url = nil
+
+    -- Download and cache album art
+    local function download_album_art(url, callback)
+        if not url or url == "" then
+            callback(nil)
+            return
+        end
+
+        local cache_dir = os.getenv("HOME") .. "/.cache/calisto"
+        os.execute("mkdir -p " .. cache_dir)
+
+        -- Handle file:// URLs
+        if url:match("^file://") then
+            local local_path = url:sub(8) -- Remove "file://"
+            callback(local_path)
+            return
+        end
+
+        -- Handle HTTP(S) URLs with caching
+        local image_id = url:match("/([a-f0-9]+)$")
+        local cache_file
+        if image_id then
+            cache_file = cache_dir .. "/" .. image_id .. ".jpg"
+        else
+            -- Create a simple hash from URL
+            local hash = 0
+            for i = 1, #url do
+                hash = ((hash * 31) + url:byte(i)) % 0x7FFFFFFF
+            end
+            cache_file = cache_dir .. "/art_" .. hash .. ".jpg"
+        end
+
+        -- Return cached file if it exists
+        local f = io.open(cache_file, "r")
+        if f then
+            f:close()
+            callback(cache_file)
+            return
+        end
+
+        -- Download the image asynchronously
+        run_shell_command_async({
+            "curl", "-sL", "-f", "--max-time", "5", "-o", cache_file, url
+        }, function(output, err)
+            if not err then
+                -- Verify file was downloaded
+                local verify = io.open(cache_file, "r")
+                if verify then
+                    verify:close()
+                    callback(cache_file)
+                else
+                    callback(nil)
+                end
+            else
+                callback(nil)
+            end
+        end)
+    end
 
     -- Update function
     local function update_media()
@@ -353,39 +536,86 @@ function Widgets.media:new(cfg)
                 if ok and data.text then
                     -- Clean text: remove leading/trailing whitespace and non-printable chars
                     -- Remove common icon byte sequences (UTF-8 for Private Use Area)
-                    full_text = data
+                    local new_text = data
                         .text
                         :gsub("[\239][\140-\191][\128-\191]", "") -- Remove U+E000-U+EFFF range
                         :gsub("[\239][\184-\191][\128-\191]", "") -- Remove U+F800-U+FFFF range
                         :gsub("^%s+", "")
                         :gsub("%s+$", "") -- Trim whitespace
-                    if full_text == "" then
-                        full_text = "No track"
+                    if new_text == "" then
+                        new_text = "No track"
                     end
-                    scroll_offset = 0
 
-                    -- If text is too long, start scrolling
-                    if #full_text > 30 then
-                        if scroll_timer then
-                            GLib.source_remove(scroll_timer)
-                        end
-                        scroll_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, function()
-                            scroll_offset = scroll_offset + 1
-                            if scroll_offset > #full_text then
-                                scroll_offset = 0
+                    -- Only reset scroll if track changed
+                    if new_text ~= previous_text then
+                        full_text = new_text
+                        previous_text = new_text
+                        scroll_offset = 0
+
+                        -- Calculate visible characters based on fixed label width
+                        -- Estimate ~8 pixels per character for monospace font
+                        local max_visible_chars = math.max(30, math.floor(label_width / 8))
+
+                        -- If text is too long, start scrolling
+                        local full_text_len = utf8_len(full_text)
+                        if full_text_len > max_visible_chars then
+                            if scroll_timer then
+                                GLib.source_remove(scroll_timer)
                             end
-                            local visible_text =
-                                string.sub(full_text .. "   " .. full_text, scroll_offset + 1, scroll_offset + 30)
-                            info_label:set_text(visible_text)
-                            return true
-                        end)
-                    else
-                        if scroll_timer then
-                            GLib.source_remove(scroll_timer)
-                            scroll_timer = nil
+                            scroll_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, function()
+                                scroll_offset = scroll_offset + 1
+                                if scroll_offset > full_text_len then
+                                    scroll_offset = 0
+                                end
+                                local doubled_text = full_text .. "   " .. full_text
+                                local visible_text = utf8_sub(doubled_text, scroll_offset + 1, scroll_offset + max_visible_chars)
+                                info_label:set_text(visible_text)
+                                return true
+                            end)
+                        else
+                            if scroll_timer then
+                                GLib.source_remove(scroll_timer)
+                                scroll_timer = nil
+                            end
+                            info_label:set_text(full_text)
                         end
-                        info_label:set_text(full_text)
                     end
+                end
+            end
+        end)
+
+        -- Get album art URL
+        run_shell_command_async({
+            "playerctl", "-p", "spotube,spotify", "metadata", "--format", "{{mpris:artUrl}}"
+        }, function(output, err)
+            if not err and output then
+                local art_url = output:gsub("^%s+", ""):gsub("%s+$", "")
+                if art_url ~= "" and art_url ~= current_art_url then
+                    current_art_url = art_url
+                    download_album_art(art_url, function(art_file)
+                        if art_file then
+                            -- Load and display the album art
+                            local ok, pixbuf_err = pcall(function()
+                                local pixbuf = GdkPixbuf.Pixbuf.new_from_file(art_file)
+                                -- Scale to art_size maintaining aspect ratio
+                                local orig_width = pixbuf:get_width()
+                                local orig_height = pixbuf:get_height()
+                                local scale_factor = art_size / math.max(orig_width, orig_height)
+                                local new_width = math.floor(orig_width * scale_factor)
+                                local new_height = math.floor(orig_height * scale_factor)
+                                local scaled = pixbuf:scale_simple(new_width, new_height, 2) -- INTERP_BILINEAR = 2
+                                local texture = Gdk.Texture.new_for_pixbuf(scaled)
+                                album_art:set_paintable(texture)
+                                album_art:set_size_request(new_width, new_height)
+                            end)
+                            if not ok then
+                                print("ERROR: Failed to load album art:", pixbuf_err)
+                            end
+                        else
+                            -- Clear album art if download failed
+                            album_art:set_paintable(nil)
+                        end
+                    end)
                 end
             end
         end)
@@ -402,6 +632,9 @@ function Widgets.media:new(cfg)
     media_box:append(toggle_btn)
     media_box:append(next_btn)
     media_box:append(label_box)
+    if cfg.show_art ~= false then
+        media_box:append(album_art)
+    end
 
     return media_box
 end
@@ -421,113 +654,153 @@ function Widgets.window:new(cfg)
 
     window_box:append(window_label)
 
+    -- UTF-8 aware string functions
+    local function utf8_chars(str)
+        local chars = {}
+        local i = 1
+        while i <= #str do
+            local byte = string.byte(str, i)
+            local char_len = 1
+            if byte >= 0xF0 then
+                char_len = 4
+            elseif byte >= 0xE0 then
+                char_len = 3
+            elseif byte >= 0xC0 then
+                char_len = 2
+            end
+            table.insert(chars, string.sub(str, i, i + char_len - 1))
+            i = i + char_len
+        end
+        return chars
+    end
+
+    local function utf8_sub(str, start_char, end_char)
+        local chars = utf8_chars(str)
+        local result = {}
+        for i = start_char, math.min(end_char, #chars) do
+            table.insert(result, chars[i])
+        end
+        return table.concat(result)
+    end
+
+    local function utf8_len(str)
+        return #utf8_chars(str)
+    end
+
     -- Marquee scrolling state
     local full_text = "Desktop"
     local scroll_offset = 0
     local scroll_timer = nil
+    local update_pending = false
+
+    -- Set up direct Sway IPC connection
+    local ipc = SwayIPC:new()
+    local ok, err = ipc:connect()
+
+    if not ok then
+        print("ERROR: Failed to connect to Sway IPC for window:", err)
+        return window_box
+    end
 
     local function update_window()
-        run_shell_command_async({ "swaymsg", "-t", "get_tree" }, function(output, err)
-            if not err and output then
-                local ok, data = pcall(Json.decode, output)
-                if ok then
-                    -- Find focused window recursively
-                    local function find_focused(node)
-                        if node.focused and node.name then
-                            return node.name
-                        end
-                        if node.nodes then
-                            for _, child in ipairs(node.nodes) do
-                                local result = find_focused(child)
-                                if result then
-                                    return result
-                                end
-                            end
-                        end
-                        if node.floating_nodes then
-                            for _, child in ipairs(node.floating_nodes) do
-                                local result = find_focused(child)
-                                if result then
-                                    return result
-                                end
-                            end
-                        end
-                        return nil
-                    end
+        ipc:get_tree(function(data, get_err)
+            if get_err then
+                print("ERROR: Failed to get window tree:", get_err)
+                return
+            end
 
-                    local title = find_focused(data) or "Desktop"
-                    full_text = title
-                    scroll_offset = 0
+            if not data then
+                print("ERROR: Empty data from IPC get_tree")
+                return
+            end
 
-                    -- If text is too long, start scrolling
-                    if #full_text > 60 then
-                        if scroll_timer then
-                            GLib.source_remove(scroll_timer)
+            -- Find focused window recursively
+            local function find_focused(node)
+                if node.focused and node.name then
+                    return node.name
+                end
+                if node.nodes then
+                    for _, child in ipairs(node.nodes) do
+                        local result = find_focused(child)
+                        if result then
+                            return result
                         end
-                        scroll_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, function()
-                            scroll_offset = scroll_offset + 1
-                            if scroll_offset > #full_text then
-                                scroll_offset = 0
-                            end
-                            local visible_text =
-                                string.sub(full_text .. "   " .. full_text, scroll_offset + 1, scroll_offset + 60)
-                            window_label:set_text(visible_text)
-                            return true
-                        end)
-                    else
-                        if scroll_timer then
-                            GLib.source_remove(scroll_timer)
-                            scroll_timer = nil
-                        end
-                        window_label:set_text(full_text)
                     end
                 end
+                if node.floating_nodes then
+                    for _, child in ipairs(node.floating_nodes) do
+                        local result = find_focused(child)
+                        if result then
+                            return result
+                        end
+                    end
+                end
+                return nil
+            end
+
+            local title = find_focused(data) or "Desktop"
+            full_text = title
+            scroll_offset = 0
+
+            -- If text is too long, start scrolling
+            local max_visible_chars = 60
+            local full_text_len = utf8_len(full_text)
+            if full_text_len > max_visible_chars then
+                if scroll_timer then
+                    GLib.source_remove(scroll_timer)
+                end
+                scroll_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, function()
+                    scroll_offset = scroll_offset + 1
+                    if scroll_offset > full_text_len then
+                        scroll_offset = 0
+                    end
+                    local doubled_text = full_text .. "   " .. full_text
+                    local visible_text = utf8_sub(doubled_text, scroll_offset + 1, scroll_offset + max_visible_chars)
+                    window_label:set_text(visible_text)
+                    return true
+                end)
+            else
+                if scroll_timer then
+                    GLib.source_remove(scroll_timer)
+                    scroll_timer = nil
+                end
+                window_label:set_text(full_text)
             end
         end)
     end
 
-    -- Subscribe to window events
-    local function subscribe_window()
-        local cmd = { "sh", "-c", "stdbuf -oL swaymsg -m -t subscribe '[\"window\"]' | jq -c" }
-        local process = Gio.Subprocess.new(cmd, Gio.SubprocessFlags.STDOUT_PIPE + Gio.SubprocessFlags.STDERR_PIPE)
-        local stdout_stream = Gio.DataInputStream.new(process:get_stdout_pipe())
-
-        local function restart_subscription(delay)
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, function()
-                subscribe_window()
-                return false
-            end)
+    -- Schedule window update with idle priority for coalescing
+    local function schedule_window_update()
+        if update_pending then
+            return -- Already scheduled
         end
+        update_pending = true
 
-        process:wait_async(nil, nil, function(source_object, res)
-            source_object:wait_finish(res)
-            restart_subscription(2000)
+        GLib.idle_add(GLib.PRIORITY_HIGH_IDLE, function()
+            update_pending = false
+            update_window()
+            return false
         end)
-
-        local cancellable = Gio.Cancellable.new()
-
-        local function read_next_line()
-            stdout_stream:read_line_async(GLib.PRIORITY_DEFAULT, cancellable, function(source_object, res)
-                local line, _length, err = source_object:read_line_finish(res)
-                if line then
-                    local ok, event = pcall(Json.decode, line)
-                    if ok and (event.change == "focus" or event.change == "title" or event.change == "close") then
-                        update_window()
-                    elseif not ok then
-                        print("ERROR: Failed to parse window event:", event)
-                    end
-                    read_next_line()
-                elseif err then
-                    print("ERROR: Failed reading from swaymsg pipe:", err)
-                end
-            end)
-        end
-        read_next_line()
     end
 
-    -- Initial update and subscribe
+    -- Initial update
     update_window()
-    subscribe_window()
+
+    -- Subscribe to window events
+    local subscribe_ok, subscribe_err = ipc:subscribe({"window"}, function(event)
+        if event.change == "focus" or event.change == "title" or event.change == "close" then
+            schedule_window_update()
+        end
+    end)
+
+    if not subscribe_ok then
+        print("ERROR: Failed to subscribe to window events:", subscribe_err)
+        ipc:disconnect()
+        return window_box
+    end
+
+    -- Start event loop
+    ipc:start_event_loop()
 
     -- Apply CSS if provided
     if cfg and cfg.css then
@@ -673,6 +946,147 @@ function Widgets.network:new(cfg)
     return network_box
 end
 
+Widgets.systray = {}
+function Widgets.systray:new(cfg)
+    cfg = cfg or {}
+    local tray_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 4)
+    tray_box:set_vexpand(true)
+    tray_box:set_valign(Gtk.Align.FILL)
+    tray_box:add_css_class("systray-widget")
+
+    local tray_items = {} -- Map of service -> widget
+
+    -- Extract icon name from SNI item
+    local function get_icon_for_item(service, callback)
+        -- Try to get IconName property
+        local bus = "session"
+        local service_name = service:match("^([^/]+)")
+        local object_path = service:match("^[^/]+(/.+)$") or "/StatusNotifierItem"
+
+        if not service_name then
+            callback(nil)
+            return
+        end
+
+        -- Query the IconName property
+        run_shell_command_async({
+            "busctl",
+            "--user",
+            "get-property",
+            service_name,
+            object_path,
+            "org.kde.StatusNotifierItem",
+            "IconName",
+        }, function(output, err)
+            if not err and output then
+                -- Parse output: s "icon-name"
+                local icon = output:match('"([^"]+)"')
+                callback(icon)
+            else
+                -- Fallback: try to extract from service name
+                local fallback_icon = service_name:match("%.([^%.]+)$") or service_name
+                callback(fallback_icon:lower())
+            end
+        end)
+    end
+
+    local function add_tray_item(service)
+        if tray_items[service] then
+            return -- Already exists
+        end
+
+        get_icon_for_item(service, function(icon_name)
+            local btn = Gtk.Button.new()
+            btn:add_css_class("tray-item")
+
+            if icon_name then
+                local icon = Gtk.Image.new_from_icon_name(icon_name)
+                icon:set_pixel_size(16)
+                btn:set_child(icon)
+                print("[systray] Added item:", service, "with icon:", icon_name)
+            else
+                -- Fallback to dot if no icon
+                btn:set_label("•")
+                print("[systray] Added item:", service, "with no icon")
+            end
+
+            btn.on_clicked = function()
+                -- Activate the tray item
+                local service_name = service:match("^([^/]+)")
+                local object_path = service:match("^[^/]+(/.+)$") or "/StatusNotifierItem"
+                run_shell_command_async({
+                    "busctl",
+                    "--user",
+                    "call",
+                    service_name,
+                    object_path,
+                    "org.kde.StatusNotifierItem",
+                    "Activate",
+                    "ii",
+                    "0",
+                    "0",
+                }, function(output, err)
+                    if err then
+                        print("[systray] Failed to activate:", service, err)
+                    end
+                end)
+            end
+
+            tray_box:append(btn)
+            tray_items[service] = btn
+        end)
+    end
+
+    local function remove_tray_item(service)
+        local btn = tray_items[service]
+        if btn then
+            tray_box:remove(btn)
+            tray_items[service] = nil
+            print("[systray] Removed item:", service)
+        end
+    end
+
+    local function update_tray_items()
+        -- Query registered items
+        run_shell_command_async({
+            "sh",
+            "-c",
+            "busctl --user get-property org.kde.StatusNotifierWatcher /StatusNotifierWatcher org.kde.StatusNotifierWatcher RegisteredStatusNotifierItems 2>/dev/null",
+        }, function(output, err)
+            if not err and output then
+                local current_services = {}
+                for service in output:gmatch('"([^"]+)"') do
+                    current_services[service] = true
+                    add_tray_item(service)
+                end
+
+                -- Remove items that no longer exist
+                for service in pairs(tray_items) do
+                    if not current_services[service] then
+                        remove_tray_item(service)
+                    end
+                end
+            end
+        end)
+    end
+
+    -- Initial update
+    update_tray_items()
+
+    -- Poll for changes every 2 seconds
+    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, function()
+        update_tray_items()
+        return true
+    end)
+
+    -- Apply CSS if provided
+    if cfg.css then
+        apply_css(tray_box, cfg.css)
+    end
+
+    return tray_box
+end
+
 Widgets.workspaces = {}
 function Widgets.workspaces:new(cfg)
     local gap = (cfg and cfg.gap) or 2
@@ -681,15 +1095,24 @@ function Widgets.workspaces:new(cfg)
     workspace_box:set_valign(Gtk.Align.FILL)
     workspace_box:set_spacing(gap) -- Configurable spacing between workspace buttons
 
-    -- get_sway_workspaces now takes a callback
+    -- Set up direct Sway IPC connection
+    local ipc = SwayIPC:new()
+    local ipc_ok, ipc_err = ipc:connect()
+
+    if not ipc_ok then
+        print("ERROR: Failed to connect to Sway IPC for workspaces:", ipc_err)
+        return workspace_box
+    end
+
+    -- get_sway_workspaces using direct IPC
     local get_sway_workspaces = function(callback)
-        run_shell_command_async({ "swaymsg", "-t", "get_workspaces" }, function(output, err)
+        ipc:get_workspaces(function(data, err)
             if err then
                 print("ERROR: Failed to get sway workspaces:", err)
                 callback({}, err)
                 return
             end
-            local parsed_workspaces = parse_sway_json(output)
+            local parsed_workspaces = parse_sway_json(Json.encode(data))
             callback(parsed_workspaces, nil)
         end)
     end
@@ -775,85 +1198,57 @@ function Widgets.workspaces:new(cfg)
         end
     end
 
-    -- Debounced update: only update after events stop for 100ms
-    local update_timer = nil
+    -- Immediate update with minimal debouncing for better responsiveness
+    local update_pending = false
     local function update_workspaces_ui_from_sway()
         get_sway_workspaces(function(workspaces, err)
-            if not err then
-                process_workspaces(workspaces)
-            else
+            if err then
                 print("ERROR: Failed to get workspaces:", err)
+                -- Keep existing UI on error instead of clearing
+                return
             end
+
+            if not workspaces or #workspaces == 0 then
+                print("WARNING: Empty workspace array from swaymsg")
+                return
+            end
+
+            process_workspaces(workspaces)
         end)
         return true -- Continue GLib.timeout_add
     end
 
     local function schedule_update()
-        -- Cancel existing timer if any
-        if update_timer then
-            GLib.source_remove(update_timer)
+        if update_pending then
+            return -- Already scheduled
         end
-        -- Schedule update after 100ms of no events
-        update_timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, function()
+        update_pending = true
+
+        GLib.idle_add(GLib.PRIORITY_HIGH_IDLE, function()
+            update_pending = false
             update_workspaces_ui_from_sway()
-            update_timer = nil
-            return false -- Don't repeat
+            return false
         end)
     end
 
+    -- Initial update
     update_workspaces_ui_from_sway()
 
-    local function subscribe_workspaces()
-        local cmd = { "sh", "-c", "stdbuf -oL swaymsg -m -t subscribe '[\"workspace\"]' | jq -c" }
-        local process = Gio.Subprocess.new(cmd, Gio.SubprocessFlags.STDOUT_PIPE + Gio.SubprocessFlags.STDERR_PIPE)
-        local stdout_stream = Gio.DataInputStream.new(process:get_stdout_pipe())
-        local stderr_stream = Gio.DataInputStream.new(process:get_stderr_pipe())
-
-        local function restart_subscription(delay)
-            GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, function()
-                subscribe_workspaces()
-                return false
-            end)
+    -- Subscribe to workspace events
+    local subscribe_ok, subscribe_err = ipc:subscribe({"workspace"}, function(event)
+        if event.change then
+            schedule_update()
         end
+    end)
 
-        -- Asynchronously wait for the process to exit
-        process:wait_async(nil, nil, function(source_object, res)
-            source_object:wait_finish(res)
-            -- Read any remaining stderr output
-            stderr_stream:read_upto_end_async(GLib.PRIORITY_DEFAULT, nil, function(source_object_err, res_err)
-                local stderr_bytes = source_object_err:read_upto_end_finish(res_err)
-                if stderr_bytes then
-                    local stderr_output = stderr_bytes:get_data()
-                    if #stderr_output > 0 then
-                        print("ERROR: Swaymsg stderr:", stderr_output)
-                    end
-                end
-                restart_subscription(2000)
-            end)
-        end)
-
-        local cancellable = Gio.Cancellable.new()
-
-        local function read_next_line()
-            stdout_stream:read_line_async(GLib.PRIORITY_DEFAULT, cancellable, function(source_object, res)
-                local line, _length, err = source_object:read_line_finish(res)
-                if line then
-                    local ok, event = pcall(Json.decode, line)
-                    if ok and event.change then
-                        schedule_update()
-                    elseif not ok then
-                        print("ERROR: Failed to parse workspace event:", event)
-                    end
-                    read_next_line()
-                elseif err then
-                    print("ERROR: Failed reading from swaymsg pipe:", err)
-                end
-            end)
-        end
-        read_next_line()
+    if not subscribe_ok then
+        print("ERROR: Failed to subscribe to workspace events:", subscribe_err)
+        ipc:disconnect()
+        return workspace_box
     end
 
-    subscribe_workspaces()
+    -- Start event loop
+    ipc:start_event_loop()
 
     -- Apply CSS if provided
     if cfg and cfg.css then

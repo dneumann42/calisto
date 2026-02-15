@@ -38,7 +38,7 @@ return {
      border-left-color: {accent_alt};
      border-bottom-color: {bg};
      border-right-color: {bg};
-     border-radius: 0px;
+     border-radius: 32px;
      padding: 0px 8px;
      margin: 0px 2px;
      min-height: {widget_height};
@@ -54,30 +54,39 @@ return {
       border-left-color: {fg_alt};
       border-bottom-color: {bg};
       border-right-color: {bg};
-      border-radius: 0px;
+      border-radius: 32px;
       padding: 0px 8px;
       margin: 0px 2px;
       box-shadow: none;
       min-height: {widget_height};
   }
   .workspace.focused {
-     background-color: {accent}; /* Focused background color */
-     color: {fg_alt}; /* Focused text color */
+     background-image: linear-gradient(135deg, {accent}, {accent_alt});
+     color: {bg};
+     border-top-color: {accent};
+     border-left-color: {accent};
+     border-bottom-color: {bg};
+     border-right-color: {bg};
+     font-weight: bold;
   }
   .workspace.urgent {
-     background-color: {urgent_bg}; /* Urgent background color */
-     color: {urgent_fg}; /* Urgent text color */
+     background-image: linear-gradient(135deg, {error}, {urgent_bg});
+     color: {urgent_fg};
+     border-top-color: {error};
+     border-left-color: {error};
   }
   .workspace.occupied {
-     background-color: {surface_alt}; /* Occupied background color */
-     color: {fg}; /* Occupied text color */
+     background-color: {surface_alt};
+     color: {fg};
   }
   .workspace:hover {
-     background-color: {hover_bg}; /* Hover background color */
+     background-color: {hover_bg};
+     border-top-color: {accent_alt};
+     border-left-color: {accent_alt};
   }
   ]],
     Media = [[
-  .media-pill-left {
+  button.media-pill-left {
      background-image: linear-gradient(135deg, {success}, {surface});
      color: {fg};
      border-style: solid;
@@ -86,43 +95,43 @@ return {
      border-left-color: {success};
      border-bottom-color: {bg};
      border-right-color: {bg};
-     border-radius: 0px;
+     border-top-left-radius: 12px;
+     border-bottom-left-radius: 12px;
      padding: 0px 8px;
-     margin: 0px 0px 0px 2px;
+     margin: 0px;
+     border-right-width: 1px;
      min-height: {widget_height};
   }
-  .media-pill-middle {
+  button.media-pill-middle {
      background-image: linear-gradient(135deg, {success}, {surface});
      color: {fg};
      border-style: solid;
      border-width: 2px;
      border-top-color: {success};
-     border-left-color: {success};
+     border-left-color: transparent;
      border-bottom-color: {bg};
-     border-right-color: {bg};
-     border-radius: 0px;
+     border-right-color: transparent;
      padding: 0px 8px;
-     margin: 0px 0px;
+     margin: 0px;
      min-height: {widget_height};
   }
-  .media-pill-right {
+  box.media-pill-right {
      background-image: linear-gradient(135deg, {success}, {surface});
      color: {fg};
      border-style: solid;
      border-width: 2px;
      border-top-color: {success};
-     border-left-color: {success};
+     border-left-color: transparent;
      border-bottom-color: {bg};
      border-right-color: {bg};
-     border-radius: 0px;
+     border-top-right-radius: 12px;
+     border-bottom-right-radius: 12px;
      padding: 0px 8px;
      margin: 0px 2px 0px 0px;
      min-height: {widget_height};
   }
-  .media-pill-left:hover, .media-pill-middle:hover, .media-pill-right:hover {
+  button.media-pill-left:hover, button.media-pill-middle:hover, box.media-pill-right:hover {
      background-image: linear-gradient(135deg, {success}, {surface_alt});
-     border-top-color: {success};
-     border-left-color: {success};
   }
   ]],
     Window = [[
@@ -135,7 +144,7 @@ return {
      border-left-color: {info};
      border-bottom-color: {bg};
      border-right-color: {bg};
-     border-radius: 0px;
+     border-radius: 32px;
      padding: 0px 8px;
      margin: 0px 2px;
      min-height: {widget_height};
@@ -151,7 +160,7 @@ return {
      border-left-color: {warning};
      border-bottom-color: {bg};
      border-right-color: {bg};
-     border-radius: 0px;
+     border-radius: 32px;
      padding: 0px 8px;
      margin: 0px 2px;
      min-height: {widget_height};
@@ -167,10 +176,42 @@ return {
      border-left-color: {accent};
      border-bottom-color: {bg};
      border-right-color: {bg};
-     border-radius: 0px;
+     border-radius: 32px;
      padding: 0px 8px;
      margin: 0px 2px;
      min-height: {widget_height};
+  }
+  ]],
+    Systray = [[
+  .systray-widget {
+     background-image: linear-gradient(135deg, {info}, {surface});
+     color: {fg};
+     border-style: solid;
+     border-width: 2px;
+     border-top-color: {info};
+     border-left-color: {info};
+     border-bottom-color: {bg};
+     border-right-color: {bg};
+     border-radius: 32px;
+     padding: 0px 4px;
+     margin: 0px 2px;
+     min-height: {widget_height};
+  }
+  .tray-item {
+     background-color: transparent;
+     color: {fg};
+     border: none;
+     border-radius: 0px;
+     padding: 0px 8px;
+     margin: 0px;
+     box-shadow: none;
+     min-height: {widget_height};
+  }
+  .tray-item:hover {
+     background-color: {hover_bg};
+  }
+  .tray-item:active {
+     background-color: {surface};
   }
   ]],
 }
