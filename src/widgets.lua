@@ -1,5 +1,6 @@
 local lgi = require("lgi")
 local Gtk = lgi.require("Gtk", "4.0")
+local Gdk = lgi.require("Gdk", "4.0")
 local GLib = lgi.require("GLib", "2.0")
 local Gio = lgi.require("Gio", "2.0") -- Need Gio for async subprocesses
 local Widgets = {}
@@ -7,6 +8,19 @@ local Json = require("json")
 local UI = require("ui")
 local pp = require("pprint")
 local SwayIPC = import("sway_ipc")
+
+-- Helper function to make a widget clickable with proper cursor and hover styling
+local function make_clickable(widget, css_class)
+    -- Set cursor to pointer
+    widget:set_cursor(Gdk.Cursor.new_from_name("pointer", nil))
+
+    -- Add CSS class for hover effects
+    if css_class then
+        widget:add_css_class(css_class)
+    end
+
+    return widget
+end
 
 -- Asynchronous command runner using Gio.Subprocess
 local function run_shell_command_async(command_args, callback)
@@ -138,6 +152,8 @@ function Widgets.button:new(cfg)
     btn.on_clicked = cfg.on_clicked or function()
         print("Button clicked")
     end
+
+    make_clickable(btn, "clickable")
     apply_css(btn, cfg.css)
     return btn
 end
@@ -236,7 +252,7 @@ function Widgets.image_button:new(cfg)
     -- Add click gesture to make it act like a button
     local Gtk4 = lgi.require("Gtk", "4.0")
     local click = Gtk4.GestureClick.new()
-    click.on_released = function(gesture, n_press, x, y)
+    click.on_released = function(_gesture, _n_press, _x, _y)
         if cfg.on_clicked then
             cfg.on_clicked()
         else
@@ -244,6 +260,8 @@ function Widgets.image_button:new(cfg)
         end
     end
     box:add_controller(click)
+
+    make_clickable(box, "clickable")
 
     -- Apply CSS with zero padding and optional nearest neighbor interpolation
     local interpolation = ""
@@ -282,6 +300,11 @@ end
 
 Widgets.clock = {}
 function Widgets.clock:new(cfg)
+    -- Wrap the label in a box so we can add click handlers
+    local clock_box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 0)
+    clock_box:set_vexpand(true)
+    clock_box:set_valign(Gtk.Align.FILL)
+
     local clock = Gtk.Label.new(format_date(cfg.format))
     if not cfg.css then
         clock:set_margin_end(12)
@@ -291,6 +314,20 @@ function Widgets.clock:new(cfg)
     clock:set_vexpand(true)
     clock:set_valign(Gtk.Align.FILL)
 
+    clock_box:append(clock)
+
+    -- Add click gesture to toggle calcurse
+    local Gtk4 = lgi.require("Gtk", "4.0")
+    local click = Gtk4.GestureClick.new()
+    click.on_released = function(_gesture, _n_press, _x, _y)
+        -- Launch calcurse toggle script
+        local home = os.getenv("HOME")
+        Gio.Subprocess.new({home .. "/.alatar/scripts/toggle-calcurse.tcl"}, Gio.SubprocessFlags.NONE)
+    end
+    clock_box:add_controller(click)
+
+    make_clickable(clock_box, "clickable")
+
     GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, function()
         clock:set_text(format_date(cfg.format))
         if cfg.tick and not cfg.tick() then
@@ -298,8 +335,8 @@ function Widgets.clock:new(cfg)
         end
         return true
     end)
-    apply_css(clock, cfg.css)
-    return clock
+    apply_css(clock_box, cfg.css)
+    return clock_box
 end
 
 Widgets.hspacer = {}
@@ -383,14 +420,17 @@ function Widgets.media:new(cfg)
     local prev_btn = Gtk.Button.new()
     local prev_icon = Gtk.Image.new_from_icon_name("media-skip-backward-symbolic")
     prev_btn:set_child(prev_icon)
+    make_clickable(prev_btn, "clickable")
 
     local toggle_btn = Gtk.Button.new()
     local toggle_icon = Gtk.Image.new_from_icon_name("media-playback-start-symbolic")
     toggle_btn:set_child(toggle_icon)
+    make_clickable(toggle_btn, "clickable")
 
     local next_btn = Gtk.Button.new()
     local next_icon = Gtk.Image.new_from_icon_name("media-skip-forward-symbolic")
     next_btn:set_child(next_icon)
+    make_clickable(next_btn, "clickable")
 
     -- Calculate fixed width for label to prevent unicode symbol width changes
     local widget_width = cfg.width or 400
@@ -820,44 +860,105 @@ function Widgets.audio:new(cfg)
     local volume_label = Gtk.Label.new("--% ")
     audio_box:append(volume_label)
 
-    local function update_audio()
-        run_shell_command_async({ "pactl", "get-sink-volume", "@DEFAULT_SINK@" }, function(output, err)
-            if not err and output then
-                -- Parse volume from pactl output: "Volume: front-left: 65536 /  100% / 0.00 dB"
-                local volume = output:match("(%d+)%%")
-                if volume then
-                    -- Get mute status
-                    run_shell_command_async(
-                        { "pactl", "get-sink-mute", "@DEFAULT_SINK@" },
-                        function(mute_output, mute_err)
-                            if not mute_err and mute_output then
-                                local is_muted = mute_output:match("yes")
-                                if is_muted then
-                                    volume_label:set_text("mute ")
-                                else
-                                    local icon = ""
-                                    local vol_num = tonumber(volume)
-                                    if vol_num <= 33 then
-                                        icon = ""
-                                    elseif vol_num <= 66 then
-                                        icon = ""
-                                    else
-                                        icon = ""
-                                    end
-                                    volume_label:set_text(string.format("%3s%% %s", volume, icon))
-                                end
-                            end
-                        end
-                    )
-                end
-            end
-        end)
+    -- Add click gesture to open pavucontrol
+    local Gtk4 = lgi.require("Gtk", "4.0")
+    local click = Gtk4.GestureClick.new()
+    click.on_released = function(_gesture, _n_press, _x, _y)
+        -- Launch pavucontrol in the background
+        Gio.Subprocess.new({"pavucontrol"}, Gio.SubprocessFlags.NONE)
+    end
+    audio_box:add_controller(click)
+
+    -- Add scroll gesture to change volume
+    local scroll = Gtk4.EventControllerScroll.new(Gtk4.EventControllerScrollFlags.VERTICAL)
+    scroll.on_scroll = function(_controller, _dx, dy)
+        -- Scroll up (dy < 0) increases volume, scroll down (dy > 0) decreases volume
+        local delta = dy < 0 and "+5%" or "-5%"
+        Gio.Subprocess.new({"pactl", "set-sink-volume", "@DEFAULT_SINK@", delta}, Gio.SubprocessFlags.NONE)
         return true
     end
+    audio_box:add_controller(scroll)
 
-    -- Update every 2 seconds
-    update_audio()
-    GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, update_audio)
+    make_clickable(audio_box, "clickable")
+
+    -- Try to use IPC for instant updates
+    local PulseAudioIPC = import("pulseaudio_ipc")
+    local pa_ipc = PulseAudioIPC:new()
+
+    -- UI update function with simple volume emoji
+    local function update_volume_label(state)
+        if state.muted then
+            volume_label:set_text("🔇 mute")
+        else
+            volume_label:set_text(string.format("🔊 %s%%", state.volume))
+        end
+    end
+
+    -- Debounced update scheduler (prevents UI thrashing during rapid volume changes)
+    local update_pending = false
+    local function schedule_audio_update()
+        if update_pending then
+            return -- Already scheduled
+        end
+        update_pending = true
+
+        GLib.idle_add(GLib.PRIORITY_HIGH_IDLE, function()
+            update_pending = false
+            pa_ipc:get_audio_state(function(state, err)
+                if not err and state then
+                    update_volume_label(state)
+                else
+                    print("WARNING: Failed to get audio state:", err)
+                end
+            end)
+            return false
+        end)
+    end
+
+    -- Try to subscribe to PulseAudio events
+    local subscribe_ok, subscribe_err = pa_ipc:subscribe({"sink"}, function(_event)
+        -- Any sink event (change, new, remove) triggers an update
+        schedule_audio_update()
+    end)
+
+    if subscribe_ok then
+        -- IPC subscription successful - use event-driven updates
+        print("Audio widget: Using PulseAudio IPC for instant updates")
+
+        -- Initial update
+        schedule_audio_update()
+    else
+        -- Fallback to polling if IPC fails
+        print("WARNING: Failed to subscribe to PulseAudio events:", subscribe_err)
+        print("Audio widget: Falling back to polling mode")
+
+        local function update_audio_polling()
+            run_shell_command_async({ "pactl", "get-sink-volume", "@DEFAULT_SINK@" }, function(output, err)
+                if not err and output then
+                    local volume = output:match("(%d+)%%")
+                    if volume then
+                        run_shell_command_async(
+                            { "pactl", "get-sink-mute", "@DEFAULT_SINK@" },
+                            function(mute_output, mute_err)
+                                if not mute_err and mute_output then
+                                    local is_muted = mute_output:match("yes")
+                                    update_volume_label({
+                                        volume = tonumber(volume),
+                                        muted = is_muted ~= nil
+                                    })
+                                end
+                            end
+                        )
+                    end
+                end
+            end)
+            return true
+        end
+
+        -- Update every 2 seconds (fallback mode)
+        update_audio_polling()
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 2000, update_audio_polling)
+    end
 
     -- Apply CSS if provided
     if cfg and cfg.css then
@@ -1141,12 +1242,15 @@ function Widgets.workspaces:new(cfg)
                 btn = Gtk.Button.new_with_label(ws.name)
                 btn:add_css_class("workspace") -- Add base class
                 btn.on_clicked = function()
-                    run_shell_command_async({ "swaymsg", "workspace", ws.name }, function(output, err)
+                    run_shell_command_async({ "swaymsg", "workspace", ws.name }, function(_output, err)
                         if err then
                             print("ERROR: Failed to switch workspace:", err)
                         end
                     end)
                 end
+
+                make_clickable(btn, "clickable")
+
                 workspace_box:append(btn)
                 current_buttons[ws.num] = btn
                 is_new_button = true

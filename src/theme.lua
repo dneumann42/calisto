@@ -3,6 +3,7 @@ return {
    button {
       background-color: {surface_alt};
       color: {fg};
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
       border-style: solid;
       border-width: 2px;
       border-top-color: {fg_alt};
@@ -29,9 +30,10 @@ return {
    }
   ]],
     Clock = [[
-  label {
+  box {
      background-image: linear-gradient(135deg, {accent_alt}, {surface});
      color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border-style: solid;
      border-width: 2px;
      border-top-color: {accent_alt};
@@ -43,11 +45,21 @@ return {
      margin: 0px 2px;
      min-height: {widget_height};
   }
+  box:hover {
+     background-image: linear-gradient(135deg, {accent_alt}, {surface_alt});
+     border-top-color: {accent};
+     border-left-color: {accent};
+  }
+  box label {
+     color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+  }
   ]],
     Workspaces = [[
   .workspace {
       background-color: {surface_alt};
       color: {fg};
+      text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
       border-style: solid;
       border-width: 2px;
       border-top-color: {fg_alt};
@@ -63,6 +75,7 @@ return {
   .workspace.focused {
      background-image: linear-gradient(135deg, {accent}, {accent_alt});
      color: {bg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border-top-color: {accent};
      border-left-color: {accent};
      border-bottom-color: {bg};
@@ -72,12 +85,14 @@ return {
   .workspace.urgent {
      background-image: linear-gradient(135deg, {error}, {urgent_bg});
      color: {urgent_fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border-top-color: {error};
      border-left-color: {error};
   }
   .workspace.occupied {
      background-color: {surface_alt};
      color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
   }
   .workspace:hover {
      background-color: {hover_bg};
@@ -89,6 +104,7 @@ return {
   button.media-pill-left {
      background-image: linear-gradient(135deg, {success}, {surface});
      color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border-style: solid;
      border-width: 2px;
      border-top-color: {success};
@@ -105,6 +121,7 @@ return {
   button.media-pill-middle {
      background-image: linear-gradient(135deg, {success}, {surface});
      color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border-style: solid;
      border-width: 2px;
      border-top-color: {success};
@@ -118,6 +135,7 @@ return {
   box.media-pill-right {
      background-image: linear-gradient(135deg, {success}, {surface});
      color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border-style: solid;
      border-width: 2px;
      border-top-color: {success};
@@ -130,6 +148,9 @@ return {
      margin: 0px 2px 0px 0px;
      min-height: {widget_height};
   }
+  box.media-pill-right label {
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+  }
   button.media-pill-left:hover, button.media-pill-middle:hover, box.media-pill-right:hover {
      background-image: linear-gradient(135deg, {success}, {surface_alt});
   }
@@ -138,6 +159,7 @@ return {
   .window-widget {
      background-image: linear-gradient(135deg, {info}, {surface});
      color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border-style: solid;
      border-width: 2px;
      border-top-color: {info};
@@ -149,11 +171,15 @@ return {
      margin: 0px 2px;
      min-height: {widget_height};
   }
+  .window-widget label {
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+  }
   ]],
     Audio = [[
   .audio-widget {
      background-image: linear-gradient(135deg, {warning}, {surface});
      color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border-style: solid;
      border-width: 2px;
      border-top-color: {warning};
@@ -165,11 +191,20 @@ return {
      margin: 0px 2px;
      min-height: {widget_height};
   }
+  .audio-widget:hover {
+     background-image: linear-gradient(135deg, {warning}, {surface_alt});
+     border-top-color: {warning};
+     border-left-color: {warning};
+  }
+  .audio-widget label {
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+  }
   ]],
     Network = [[
   .network-widget {
      background-image: linear-gradient(135deg, {accent}, {surface});
      color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border-style: solid;
      border-width: 2px;
      border-top-color: {accent};
@@ -181,11 +216,15 @@ return {
      margin: 0px 2px;
      min-height: {widget_height};
   }
+  .network-widget label {
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+  }
   ]],
     Systray = [[
   .systray-widget {
      background-image: linear-gradient(135deg, {info}, {surface});
      color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border-style: solid;
      border-width: 2px;
      border-top-color: {info};
@@ -200,6 +239,7 @@ return {
   .tray-item {
      background-color: transparent;
      color: {fg};
+     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
      border: none;
      border-radius: 0px;
      padding: 0px 8px;
